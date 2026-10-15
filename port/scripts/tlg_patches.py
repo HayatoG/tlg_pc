@@ -3,10 +3,11 @@
 """The Last Guardian frame rate patches (TLG_FPS=30|60|unlocked), written to out/patches.bin.
 
 Each patch is a list of {image offset, expected bytes, new bytes} for eboot 1.03 only (sha256
-below): the expected bytes are checked in eboot.bin before anything is written, so another
-build never gets byte writes in the wrong place. The loader (probe.c apply_patches) applies
-the file after relocation. Image offsets are eboot virtual addresses; the Ghidra addresses in
-the comments (base 0x1000000) are offset + 0x1000000. Research: docs/60fps.md.
+below, or a SELF dump of it): the expected bytes are checked in eboot.bin before anything is
+written, so another build never gets byte writes in the wrong place. The loader (probe.c
+apply_patches) applies the file after relocation. Image offsets are eboot virtual addresses;
+the Ghidra addresses in the comments (base 0x1000000) are offset + 0x1000000. Research:
+docs/60fps.md.
 
 30 (default) writes an empty patch file: the game runs exactly as on PS4.
 """
@@ -18,6 +19,7 @@ import struct
 import sys
 
 EBOOT_103_SHA256 = '91dce685be81f8f6bc88097d4fc7a62e97ca08d109621c57fe9371ae125feb3c'
+SELF_MAGIC = b'O\x15=\x1d'
 TEXT_FILE_OFFSET = 0x4000      # PT_LOAD 0 (R E): file offset of vaddr 0
 TEXT_SIZE = 0x16b2d5c
 GHIDRA_BASE = 0x1000000
@@ -123,7 +125,20 @@ def prepare(game_dir, out_dir, mode):
             eboot = b''
             lines.append(f'Frame rate: cannot read eboot.bin ({error})')
         digest = hashlib.sha256(eboot).hexdigest()
-        if digest != EBOOT_103_SHA256:
+        usable = digest == EBOOT_103_SHA256
+        if not usable and eboot[:4] == SELF_MAGIC:
+            # A SELF dump of 1.03 (sha256 b7f61057…, #40) wraps the same ELF as the plain
+            # dump the hash is for, at other file offsets: patch the ELF inside (the image
+            # prepare.py hands the loader). mode_writes checks every expected byte, so a SELF
+            # of another build still falls back to 30.
+            try:
+                from prepare import parse_self
+                eboot = bytes(parse_self(eboot)[0])
+                usable = True
+                lines.append(f'Frame rate: eboot.bin is a SELF ({digest[:16]}…), checking the ELF inside')
+            except ValueError as error:
+                lines.append(f'Frame rate: cannot read the SELF eboot.bin ({error})')
+        if not usable:
             lines.append(f'Frame rate: eboot.bin is not v1.03 ({digest[:16]}…): {mode} FPS patches not applied, 30 FPS')
             mode = '30'
         else:
