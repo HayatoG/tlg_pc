@@ -761,6 +761,16 @@ void runtime_restart(void) {
     /* The new launch waits for this process's GPU device to go away (run.py --after). */
     TerminateProcess(GetCurrentProcess(),0);
 #else
+    /* Packaged builds have no run.sh: run.py/tlg_run.py sets TLG_RESTART_COMMAND to the launch
+     * command line (the same as Windows). Fall back to run.sh for a source checkout. */
+    const char *command=getenv("TLG_RESTART_COMMAND");
+    if (command && *command) {
+        puts("Runtime: restarting through TLG_RESTART_COMMAND");
+        syscall(SYS_close_range, 3u, ~0u, 0u);
+        execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+        perror("runtime_restart: exec");
+        _exit(1);
+    }
     puts("Runtime: restarting through run.sh");
     syscall(SYS_close_range, 3u, ~0u, 0u);
     execlp("bash", "bash", "run.sh", (char *)NULL);
