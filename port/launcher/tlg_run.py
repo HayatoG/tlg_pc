@@ -31,8 +31,26 @@ LOG_DIR = OUT_DIR / 'logs'
 PROBE = OUT_DIR / ('tlg-probe.exe' if os.name == 'nt' else 'tlg-probe')
 KEEP_LOGS = 30
 
-# Game language: PS4 system language ids the game ships voice/text archives for.
-GAME_LANGUAGES = {'en': 1, 'pt_BR': 17, 'es_LA': 20, 'fr_CA': 22}
+# Game language: the engine's own ids (NOT the PS4 system ones), looked up through
+# sceSystemServiceParamGetInt(LANG). Each CUSA ships a subset of them; an id it does not ship
+# falls back to English (1). Tables swept from the loaded trico_<lang>.psarc.
+LANGUAGES_US = {'en': 1, 'pt_BR': 17, 'es_LA': 20, 'fr_CA': 22}
+LANGUAGES_EU = {'en': 1, 'fr': 2, 'es_ES': 3, 'de': 4, 'it': 5, 'nl': 6, 'pt_PT': 7, 'ru': 8,
+                'fi': 12, 'sv': 13, 'da': 14, 'no': 15, 'pl': 16, 'tr': 19, 'ar': 21}
+LANGUAGES_BY_TITLE = {'CUSA03627': LANGUAGES_US, 'CUSA03745': LANGUAGES_EU}
+DEFAULT_LANGUAGE_BY_TITLE = {'CUSA03627': 'es_LA', 'CUSA03745': 'es_ES'}
+
+
+def game_languages(game_dir=''):
+    """The language table (engine ids) the CUSA in game_dir ships; the US one when it is unknown."""
+    title = shader_cache.title_id(game_dir) if game_dir else None
+    return LANGUAGES_BY_TITLE.get(title, LANGUAGES_US)
+
+
+def default_language(game_dir=''):
+    """The game language the launcher starts with for the CUSA in game_dir (US by default)."""
+    title = shader_cache.title_id(game_dir) if game_dir else None
+    return DEFAULT_LANGUAGE_BY_TITLE.get(title, 'es_LA')
 
 # TLG defaults (see README "Opções" and the reasons in each comment).
 DEFAULT_ENV = {
@@ -376,7 +394,8 @@ def build_env(settings, extra=None):
     for key, value in DEFAULT_ENV.items():
         env.setdefault(key, value)  # explicit TLG_* in the environment always win
     env['TLG_GC_BUDGET_MB'] = os.environ.get('TLG_GC_BUDGET_MB', str(int(settings['vram_budget_mb'])))
-    env['TLG_LANGUAGE'] = os.environ.get('TLG_LANGUAGE', str(GAME_LANGUAGES.get(settings['game_language'], 1)))
+    env['TLG_LANGUAGE'] = os.environ.get('TLG_LANGUAGE', str(
+        game_languages(settings.get('game_dir')).get(settings['game_language'], 1)))
     if settings.get('ui_language', 'auto') != 'auto':
         env['TLG_UI_LANG'] = settings['ui_language']
     # Without the console module the port's own mixer (runtime_ngs2.c) plays the audio.

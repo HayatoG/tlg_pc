@@ -115,7 +115,12 @@ TEXT = {
 }
 CHANNEL_URL = 'https://www.youtube.com/@hayatog-dev'
 DISCORD_URL = 'https://discord.gg/UMkdMYZh9g'
-GAME_LANGUAGE_NAMES = {'en': 'English', 'pt_BR': 'Português (Brasil)', 'es_LA': 'Español (Latinoamérica)',
+GAME_LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'es_ES': 'Español (España)',
+                       'de': 'Deutsch', 'it': 'Italiano', 'nl': 'Nederlands',
+                       'pt_PT': 'Português (Portugal)', 'ru': 'Русский', 'fi': 'Suomi',
+                       'sv': 'Svenska', 'da': 'Dansk', 'no': 'Norsk', 'pl': 'Polski',
+                       'tr': 'Türkçe', 'ar': 'العربية',
+                       'pt_BR': 'Português (Brasil)', 'es_LA': 'Español (Latinoamérica)',
                        'fr_CA': 'Français (Canada)'}
 UI_LANGUAGES = ['auto', 'pt_BR', 'en_US']
 UI_LANGUAGE_NAMES = {'pt_BR': 'Português (Brasil)', 'en_US': 'English (US)'}
@@ -274,7 +279,8 @@ class Launcher:
         lang = ttk.LabelFrame(middle, text=self.t('language'), padding=8)
         lang.grid(sticky='ew', pady=(0, 8))
         lang.columnconfigure(1, weight=1)
-        self.combo(lang, 0, 'game_language', list(tlg_run.GAME_LANGUAGES), lambda k: GAME_LANGUAGE_NAMES[k])
+        self.game_lang_box = None
+        self.build_game_language(lang)
         self.combo(lang, 1, 'ui_language', UI_LANGUAGES,
                    lambda k: self.t('auto') if k == 'auto' else UI_LANGUAGE_NAMES[k], on_change=self.build)
         video = ttk.LabelFrame(middle, text=self.t('video'), padding=8)
@@ -398,6 +404,38 @@ class Launcher:
         box.bind('<<ComboboxSelected>>', picked)
         return box
 
+    # -- game language (depends on the loaded CUSA) ---------------------------------------------
+    def build_game_language(self, parent):
+        """Game language: the ones the loaded CUSA ships (by its title id), US by default."""
+        ttk.Label(parent, text=self.t('game_language')).grid(row=0, column=0, sticky='w')
+        self.game_lang_box = ttk.Combobox(parent, state='readonly', width=28)
+        self.game_lang_box.grid(row=0, column=1, sticky='w', padx=6, pady=2)
+        self.game_lang_box.bind('<<ComboboxSelected>>', self.picked_language)
+        self.refresh_language_choices()
+
+    def picked_language(self, _=None):
+        values = self.game_lang_values
+        self.settings['game_language'] = values[self.game_lang_box.current()]
+        tlg_run.save_settings(self.settings)
+        self.refresh_status()
+
+    def refresh_language_choices(self):
+        """Reload the combo for the game folder: another CUSA ships another set of languages."""
+        if getattr(self, 'game_lang_box', None) is None:
+            return
+        values = list(tlg_run.game_languages(self.settings.get('game_dir')))
+        self.game_lang_values = values
+        self.game_lang_box.configure(values=[GAME_LANGUAGE_NAMES.get(v, v) for v in values])
+        current = self.settings.get('game_language')
+        if current not in values:
+            current = tlg_run.default_language(self.settings.get('game_dir'))
+        if current not in values:
+            current = values[0]
+        self.game_lang_box.current(values.index(current))
+        if current != self.settings.get('game_language'):
+            self.settings['game_language'] = current
+            tlg_run.save_settings(self.settings)
+
     def remap_dialog(self):
         """PS4 button -> keys and mouse buttons (tlg.ini key_map through tlg_run.launch)."""
         if getattr(self, 'remap_window', None) and self.remap_window.winfo_exists():
@@ -491,6 +529,7 @@ class Launcher:
             except tk.TclError:
                 pass  # spinbox while typing
         tlg_run.save_settings(self.settings)
+        self.refresh_language_choices()
         self.refresh_status()
 
     def refresh_status(self):
