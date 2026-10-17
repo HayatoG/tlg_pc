@@ -877,6 +877,7 @@ bool PipelineCache::CheckCacheProfile() {
         std::memcpy(profile_data.data(), &profile, sizeof(profile));
         Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "profile",
                                            std::move(profile_data));
+        OnColdCache();
         return false;
     }
     if (profile_data.size() != sizeof(Shader::Profile)) {
@@ -898,9 +899,25 @@ bool PipelineCache::CheckCacheProfile() {
         std::memcpy(profile_data.data(), &profile, sizeof(profile));
         Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "profile",
                                            std::move(profile_data));
+        OnColdCache();
         return false;
     }
     return true;
+}
+
+// tlg: with background compilation, a draw whose pipeline is still compiling is skipped. On the
+// first session of a new cache, on the AMD proprietary driver, some of those skipped draws left a
+// persistent target uninitialized: the lower half of the screen kept 16x16 lighting blocks until
+// the upscaling chain was recreated. Compile synchronously for this session only (more stutter,
+// once). TLG_ASYNC_SHADERS in the environment (0 or 1) keeps the user's choice instead.
+void PipelineCache::OnColdCache() {
+    const char* env = std::getenv("TLG_ASYNC_SHADERS");
+    if ((env && *env) || instance.GetDriverID() != vk::DriverId::eAmdProprietary) {
+        return;
+    }
+    cold_cache_sync.store(true, std::memory_order_relaxed);
+    std::printf("Pipeline cache: new cache, compiling shaders synchronously this session "
+                "(TLG_ASYNC_SHADERS=1 to keep background compilation)\n");
 }
 
 void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {

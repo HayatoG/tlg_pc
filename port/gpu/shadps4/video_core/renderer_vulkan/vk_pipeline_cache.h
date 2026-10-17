@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <unordered_map>
 #include <shared_mutex>
@@ -190,6 +191,7 @@ private:
     void FinishCompilations();
     void SeedWorkerCaches();
     bool CheckCacheProfile();
+    void OnColdCache();
     struct BackgroundWarmup;
     struct WarmStage;
     void ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data);
@@ -223,6 +225,9 @@ private:
     vk::UniquePipelineCache pipeline_cache;
     vk::UniquePipelineLayout pipeline_layout;
     Shader::Profile profile{};
+    /// tlg: this session started a new pipeline cache and compiles graphics pipelines
+    /// synchronously (OnColdCache).
+    std::atomic<bool> cold_cache_sync{};
     Shader::Pools pools;
     CompilerPool<Shader::Pools> compiler_pools{8};
     std::unique_ptr<AsyncCompiler> compiler, capture_compiler;

@@ -381,8 +381,17 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
             return !instance.IsFragmentShaderBarycentricSupported() &&
                    instance.GetDriverID() == vk::DriverId::eNvidiaProprietary;
         }(),
-        .needs_lds_barriers = instance.GetDriverID() == vk::DriverId::eNvidiaProprietary ||
-                              instance.GetDriverID() == vk::DriverId::eMesaKosmickrisp,
+        // tlg: the AMD proprietary driver (RX 9060 XT, Windows, 26.8.1) also reorders shared
+        // memory accesses in 64-thread compute shaders without barriers: lighting came out in
+        // 16x16 blocks. TLG_LDS_BARRIERS=0/1 overrides.
+        .needs_lds_barriers = [&] {
+            if (const char* env = std::getenv("TLG_LDS_BARRIERS")) {
+                return env[0] == '1';
+            }
+            return instance.GetDriverID() == vk::DriverId::eNvidiaProprietary ||
+                   instance.GetDriverID() == vk::DriverId::eAmdProprietary ||
+                   instance.GetDriverID() == vk::DriverId::eMesaKosmickrisp;
+        }(),
         .needs_buffer_offsets = instance.StorageMinAlignment() > 4,
         .needs_unorm_fixup = instance.GetDriverID() == vk::DriverId::eMesaKosmickrisp,
         .needs_clip_distance_emulation = instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
@@ -661,7 +670,8 @@ void PipelineCache::FinishCompilations() {
 }
 
 bool PipelineCache::AsyncCompilation() const {
-    return compiler && TlgSettings::Get().async_shaders.load(std::memory_order_relaxed);
+    return compiler && !cold_cache_sync.load(std::memory_order_relaxed) &&
+           TlgSettings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
 void PipelineCache::SeedWorkerCaches() {
