@@ -36,12 +36,14 @@ TEXT = {
     'Borderless': ('Borderless window', 'Janela sem borda'),
     'Fullscreen': ('Fullscreen', 'Tela cheia'),
     'vsync': ('VSync', 'VSync'),
-    'frame_rate': ('Frame rate (experimental)', 'Taxa de quadros (experimental)'),
-    'fps_30': ('30 FPS (as on PS4)', '30 FPS (como no PS4)'),
-    'fps_60': ('60 FPS', '60 FPS'),
-    'fps_unlocked': ('Unlocked (up to the display)', 'Livre (até a taxa do monitor)'),
-    'fps_hint': ('60/unlocked patch eboot 1.03 in memory; see docs/60fps.md',
-                 '60/livre alteram o eboot 1.03 na memória; ver docs/60fps.md'),
+    'frame_rate': ('Frame rate (FPS)', 'Taxa de quadros (FPS)'),
+    'fps_hint': ('30 = the game\'s own; 0 or empty = 30; other values patch eboot 1.03 in memory; see docs/60fps.md',
+                 '30 = o do jogo; 0 ou vazio = 30; outros valores alteram o eboot 1.03 na memória; ver docs/60fps.md'),
+    'resolution': ('Resolution', 'Resolução'),
+    'resolution_hint': ('A side that is 0 or empty follows the other in 16:9; both: the game\'s own, 1920x1080. Other sizes patch eboot 1.03 in memory; see docs/60fps.md',
+                        'Um lado 0 ou vazio segue o outro em 16:9; ambos: o do jogo, 1920x1080. Outros tamanhos alteram o eboot 1.03 na memória; ver docs/60fps.md'),
+    'readback_linear': ('Linear render target readback (auto exposure; TLG_READBACK_LINEAR)',
+                        'Leitura linear de render targets (exposição automática; TLG_READBACK_LINEAR)'),
     'show_fps': ('Show FPS overlay at start (F10 toggles)', 'Mostrar overlay de FPS ao iniciar (F10 alterna)'),
     'vram': ('Texture cache budget (MB of VRAM)', 'Orçamento do cache de texturas (MB de VRAM)'),
     'vram_hint': ('6 GB card: 5600 · 8 GB: 7000 · 12 GB: 10500 · 16 GB: 14000 · 24 GB: 21500. This is video card memory (VRAM), not RAM; never above your card\'s VRAM.',
@@ -291,9 +293,18 @@ class Launcher:
         self.combo(video, 0, 'display_mode', DISPLAY_MODES, lambda k: self.t(k))
         self.check(video, 1, 'vsync')
         self.check(video, 2, 'show_fps')
-        self.combo(video, 5, 'frame_rate', tlg_run.FRAME_RATES, lambda k: self.t(f'fps_{k}'))
+        ttk.Label(video, text=self.t('frame_rate')).grid(row=5, column=0, sticky='w')
+        self.number(video, 'frame_rate').grid(row=5, column=1, sticky='w', padx=6, pady=2)
         ttk.Label(video, text=self.t('fps_hint'), foreground='#777', wraplength=320).grid(
             row=6, column=0, columnspan=2, sticky='w')
+        ttk.Label(video, text=self.t('resolution')).grid(row=7, column=0, sticky='w')
+        size = ttk.Frame(video)
+        size.grid(row=7, column=1, sticky='w', padx=6, pady=2)
+        self.number(size, 'resolution_width').grid(row=0, column=0)
+        ttk.Label(size, text='x').grid(row=0, column=1, padx=4)
+        self.number(size, 'resolution_height').grid(row=0, column=2)
+        ttk.Label(video, text=self.t('resolution_hint'), foreground='#777', wraplength=320).grid(
+            row=8, column=0, columnspan=2, sticky='w')
         ttk.Label(video, text=self.t('vram'), wraplength=220).grid(row=3, column=0, sticky='w', pady=(6, 0))
         vram = tk.IntVar(value=int(self.settings['vram_budget_mb']))
         self.vars['vram_budget_mb'] = vram
@@ -302,7 +313,8 @@ class Launcher:
         spin.grid(row=3, column=1, sticky='w', padx=6, pady=(6, 0))
         spin.bind('<FocusOut>', lambda _: self.changed())
         ttk.Label(video, text=self.t('vram_hint'), foreground='#777', wraplength=360).grid(row=4, column=0, columnspan=2, sticky='w')
-        self.build_filters(video, 7)
+        self.check(video, 9, 'readback_linear')
+        self.build_filters(video, 10)
 
         log_frame = ttk.LabelFrame(main, text='Log', padding=4)
         log_frame.grid(row=2, column=2, sticky='nsew', **pad)
@@ -387,6 +399,16 @@ class Launcher:
             values[key] = f'{value:.2f}'
         tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
         tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', values)
+
+    def number(self, parent, key):
+        """A field that takes digits only, saved with the other settings as you type."""
+        value = str(self.settings.get(key) or '')
+        var = tk.StringVar(value=value if value.isascii() and value.isdigit() else '')
+        self.vars[key] = var
+        digits = (self.root.register(lambda text: text == '' or (text.isascii() and text.isdigit())), '%P')
+        field = ttk.Entry(parent, textvariable=var, width=8, validate='key', validatecommand=digits)
+        var.trace_add('write', lambda *_: self.changed())
+        return field
 
     def combo(self, parent, row, key, values, label, on_change=None):
         ttk.Label(parent, text=self.t(key)).grid(row=row, column=0, sticky='w')
@@ -612,6 +634,7 @@ class Launcher:
         self.lines.put(f"{self.t('running')} {log}")
         with open(log, 'w', encoding='utf-8') as out:
             out.write(f'Frame rate: requested {tlg_run.frame_rate(self.settings)}, applied {tlg_run.applied_frame_rate}\n')
+            out.write(f'Resolution: requested {tlg_run.resolution(self.settings)}, applied {tlg_run.applied_resolution}\n')
             for line in self.process.stdout:
                 out.write(line)
                 out.flush()

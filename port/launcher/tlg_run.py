@@ -56,7 +56,6 @@ def default_language(game_dir=''):
 DEFAULT_ENV = {
     'TLG_PIPELINE_BINARIES': '0',  # VK_KHR_pipeline_binary crashes on the NVIDIA 595 driver
     'TLG_READBACKS': '2',          # the game reads GPU compute results on the CPU (AsyncMap)
-    'TLG_READBACK_LINEAR': '1',    # small/linear render targets back to the CPU: auto exposure (#38, #40)
     'TLG_GC_BUDGET_MB': '5600',    # texture cache budget for 6 GB of VRAM
     'TLG_UPSCALER': 'off',         # native image: GoW3's temporal upscalers made it shake
     'TLG_JITTER': '0',
@@ -81,11 +80,16 @@ DEFAULT_SETTINGS = {
     'mouse_sensitivity': 1.0,
     'mouse_invert_y': False,
     'key_map': {},                 # PS4 button -> 'Key|Mouse Left' (empty: the default)
-    'frame_rate': '30',            # 30 | 60 | unlocked (scripts/tlg_patches.py; TLG_FPS wins)
+    'frame_rate': 30,              # the game's own; 0 too (scripts/tlg_patches.py; TLG_FPS wins)
+    'resolution_width': 1920,      # the game's own size; a side that is 0 follows the other in 16:9
+    'resolution_height': 1080,     # (TLG_RESOLUTION=WxH wins)
+    # Small/linear render targets back to the CPU: auto exposure (#38, #40); TLG_READBACK_LINEAR wins.
+    'readback_linear': True,
 }
-FRAME_RATES = ['30', '60', 'unlocked']
-# The frame rate mode prepare() really applied (another eboot build stays at 30).
+# The frame rate and resolution prepare() really applied (another eboot build stays at
+# 30 FPS / native).
 applied_frame_rate = '30'
+applied_resolution = 'native'
 
 # Keyboard and mouse defaults of src/runtime_pad.c, in its key_map syntax ('|': several).
 DEFAULT_KEYS = {
@@ -278,13 +282,19 @@ def run_script(argv):
 
 def frame_rate(settings):
     """The requested frame rate mode: TLG_FPS, else the launcher's setting."""
-    return os.environ.get('TLG_FPS') or str(settings.get('frame_rate', '30'))
+    return os.environ.get('TLG_FPS') or str(settings.get('frame_rate', 30))
+
+
+def resolution(settings):
+    """The requested resolution: TLG_RESOLUTION (WxH), else the launcher's width and height."""
+    return os.environ.get('TLG_RESOLUTION') or \
+        f"{settings.get('resolution_width') or 0}x{settings.get('resolution_height') or 0}"
 
 
 def prepare(settings, log=print):
-    """Builds out/boot-linked.bin, out/content.bin and out/patches.bin (frame rate patches);
-    returns the module list that was linked."""
-    global applied_frame_rate
+    """Builds out/boot-linked.bin, out/content.bin and out/patches.bin (frame rate and resolution
+    patches); returns the module list that was linked."""
+    global applied_frame_rate, applied_resolution
     game = settings['game_dir']
     scripts = PORT_DIR / 'scripts'
     modules = ['libc.prx', 'libSceFios2.prx']
@@ -295,7 +305,8 @@ def prepare(settings, log=print):
         [*python_command(scripts / 'prepare.py'), game, '--out', str(OUT_DIR)],
         [*python_command(scripts / 'link_modules.py'), game, '--out', str(OUT_DIR), '--modules', *modules],
         [*python_command(scripts / 'content_profile.py'), game, '--out', str(OUT_DIR)],
-        [*python_command(scripts / 'tlg_patches.py'), game, '--out', str(OUT_DIR), '--mode', frame_rate(settings)],
+        [*python_command(scripts / 'tlg_patches.py'), game, '--out', str(OUT_DIR), '--fps', frame_rate(settings),
+         '--resolution', resolution(settings)],
     ]
     for step in steps:
         result = subprocess.run(step, cwd=str(scripts), capture_output=True, text=True,
@@ -307,6 +318,8 @@ def prepare(settings, log=print):
             log(line)
             if line.startswith('Frame rate: ') and line.endswith(' patch writes'):
                 applied_frame_rate = line.split()[2]
+            elif line.startswith('Resolution: ') and line.endswith(' patch writes'):
+                applied_resolution = line.split()[1].rstrip(',')
     isa_table(log)
     return modules
 
@@ -407,11 +420,12 @@ def build_env(settings, extra=None):
     icon = window_icon()
     if icon:
         env.setdefault('TLG_WINDOW_ICON', str(icon))
-    # The present limiter never lets more frames through than the patched engine rate; unlocked
-    # flips as soon as a frame is ready (480 Hz vblank) up to the display refresh or the menu limit.
-    env['TLG_ENGINE_FPS'] = {'30': '30', '60': '60'}.get(applied_frame_rate, '240')
-    if applied_frame_rate == 'unlocked':
-        env.setdefault('TLG_VBLANK_HZ', '0')
+    # The present limiter never lets more frames through than the patched engine rate, and the
+    # vblank runs at that rate (the 60 Hz default serves 30 and 60).
+    env['TLG_ENGINE_FPS'] = applied_frame_rate
+    if applied_frame_rate not in ('30', '60'):
+        env.setdefault('TLG_VBLANK_HZ', applied_frame_rate)
+    env.setdefault('TLG_READBACK_LINEAR', '1' if settings.get('readback_linear', True) else '0')
     restart = f'"{sys.executable}" --play' if FROZEN else f'"{sys.executable}" "{Path(__file__).resolve()}"'
     env.setdefault('TLG_RESTART_COMMAND', restart)
     # Linux package: the libraries built with the port (SDL3, FFmpeg, ...) are in out/lib.
@@ -487,7 +501,7 @@ def main(argv=None):
             print(f'{"Compile primeiro" if kind == "not_built" else "Faltando"}: {detail}', file=sys.stderr)
         return 1
     notes = []
-    prepare(settings, log=lambda line: notes.append(line) if line.startswith('Frame rate') else None)
+    prepare(settings, log=lambda line: notes.append(line) if line.startswith(('Frame rate', 'Resolution')) else None)
     process, log = launch(settings, seconds)
     print(f'Rodando (log: {log})', flush=True)
     with open(log, 'w', encoding='utf-8') as out:
