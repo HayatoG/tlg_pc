@@ -25,10 +25,14 @@ import shader_cache
 FROZEN = bool(getattr(sys, 'frozen', False))
 PORT_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent.parent
 REPO_DIR = PORT_DIR.parent
-OUT_DIR = PORT_DIR / 'out'
-USER_DIR = PORT_DIR / 'user'
+# Writeable dirs (out/, user/): a read-only mount (an AppImage, a sandboxed package) has nowhere
+# to write under PORT_DIR, so TLG_DATA_DIR moves them to a writable root; the shipped binaries
+# (the probe and its libraries) stay under PORT_DIR/out.
+DATA_DIR = Path(os.environ['TLG_DATA_DIR']) if os.environ.get('TLG_DATA_DIR') else PORT_DIR
+OUT_DIR = DATA_DIR / 'out'
+USER_DIR = DATA_DIR / 'user'
 LOG_DIR = OUT_DIR / 'logs'
-PROBE = OUT_DIR / ('tlg-probe.exe' if os.name == 'nt' else 'tlg-probe')
+PROBE = PORT_DIR / 'out' / ('tlg-probe.exe' if os.name == 'nt' else 'tlg-probe')
 KEEP_LOGS = 30
 
 # Game language: the engine's own ids (NOT the PS4 system ones), looked up through
@@ -320,7 +324,7 @@ def cpu_missing_sets(log=print):
     that lacks a set nothing can rewrite (AVX and older) stops here (exit 20) with the probe's reason.
     The probe gets the same library path as the game (out/lib in the Linux package)."""
     env = os.environ.copy()
-    bundled = OUT_DIR / 'lib'
+    bundled = PORT_DIR / 'out' / 'lib'
     if os.name != 'nt' and bundled.is_dir():
         env['LD_LIBRARY_PATH'] = os.pathsep.join(filter(None, [str(bundled), os.environ.get('LD_LIBRARY_PATH')]))
     try:
