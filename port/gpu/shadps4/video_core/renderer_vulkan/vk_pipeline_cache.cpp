@@ -670,7 +670,8 @@ void PipelineCache::FinishCompilations() {
 }
 
 bool PipelineCache::AsyncCompilation() const {
-    return compiler && TlgSettings::Get().async_shaders.load(std::memory_order_relaxed);
+    return compiler && !cold_cache_sync.load(std::memory_order_relaxed) &&
+           TlgSettings::Get().async_shaders.load(std::memory_order_relaxed);
 }
 
 void PipelineCache::SeedWorkerCaches() {
