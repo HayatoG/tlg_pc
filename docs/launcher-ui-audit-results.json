@@ -1,0 +1,418 @@
+{
+  "baseline_commit": "b8d5f412398fae52a444400a9b5131bc1c970cc3",
+  "unchanged_methods": [
+    "__init__",
+    "pt",
+    "t",
+    "filters_changed",
+    "picked_language",
+    "refresh_language_choices",
+    "check",
+    "changed",
+    "refresh_status",
+    "browse",
+    "open",
+    "clear_cache",
+    "append",
+    "play",
+    "run_game",
+    "pump",
+    "quit"
+  ],
+  "presentation_methods_changed": [
+    "build",
+    "load_art",
+    "build_filters",
+    "combo",
+    "build_game_language",
+    "remap_dialog",
+    "mods_dialog"
+  ],
+  "contrast": {
+    "pairs": {
+      "main": {
+        "foreground": "#283d35",
+        "background": "#f8f5ed",
+        "ratio": 10.654
+      },
+      "secondary": {
+        "foreground": "#536158",
+        "background": "#eeeae0",
+        "ratio": 5.431
+      },
+      "links": {
+        "foreground": "#48644f",
+        "background": "#eeeae0",
+        "ratio": 5.444
+      },
+      "selection": {
+        "foreground": "#f4f0e4",
+        "background": "#283d35",
+        "ratio": 10.188
+      },
+      "popup_selection": {
+        "foreground": "#f4f0e4",
+        "background": "#48644f",
+        "ratio": 5.739
+      },
+      "disabled": {
+        "foreground": "#536158",
+        "background": "#d5d9cc",
+        "ratio": 4.544
+      },
+      "control_border": {
+        "foreground": "#7a8477",
+        "background": "#f8f5ed",
+        "ratio": 3.573
+      }
+    },
+    "hero": [
+      {
+        "language": "pt_BR",
+        "geometry": "1040x700",
+        "text": "UM VÍNCULO ALÉM DAS PALAVRAS",
+        "minimum_ratio": 4.732,
+        "threshold": 4.5
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1040x700",
+        "text": "THE LAST\nGUARDIAN",
+        "minimum_ratio": 3.269,
+        "threshold": 3.0
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1040x700",
+        "text": "Um menino. Um companheiro misterioso.\nUma jornada extraordinária espera por você.",
+        "minimum_ratio": 4.769,
+        "threshold": 4.5
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1040x700",
+        "text": "RECOMPILAÇÃO PARA PC   /   HAYATOG",
+        "minimum_ratio": 5.597,
+        "threshold": 4.5
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1240x820",
+        "text": "UM VÍNCULO ALÉM DAS PALAVRAS",
+        "minimum_ratio": 8.102,
+        "threshold": 4.5
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1240x820",
+        "text": "THE LAST\nGUARDIAN",
+        "minimum_ratio": 5.597,
+        "threshold": 3.0
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1240x820",
+        "text": "Um menino. Um companheiro misterioso.\nUma jornada extraordinária espera por você.",
+        "minimum_ratio": 5.258,
+        "threshold": 4.5
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1240x820",
+        "text": "RECOMPILAÇÃO PARA PC   /   HAYATOG",
+        "minimum_ratio": 10.529,
+        "threshold": 4.5
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1920x1080",
+        "text": "UM VÍNCULO ALÉM DAS PALAVRAS",
+        "minimum_ratio": 9.465,
+        "threshold": 4.5
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1920x1080",
+        "text": "THE LAST\nGUARDIAN",
+        "minimum_ratio": 13.835,
+        "threshold": 3.0
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1920x1080",
+        "text": "Um menino. Um companheiro misterioso.\nUma jornada extraordinária espera por você.",
+        "minimum_ratio": 11.06,
+        "threshold": 4.5
+      },
+      {
+        "language": "pt_BR",
+        "geometry": "1920x1080",
+        "text": "RECOMPILAÇÃO PARA PC   /   HAYATOG",
+        "minimum_ratio": 13.993,
+        "threshold": 4.5
+      },
+      {
+        "language": "en_US",
+        "geometry": "1040x700",
+        "text": "A BOND BEYOND WORDS",
+        "minimum_ratio": 4.732,
+        "threshold": 4.5
+      },
+      {
+        "language": "en_US",
+        "geometry": "1040x700",
+        "text": "THE LAST\nGUARDIAN",
+        "minimum_ratio": 3.269,
+        "threshold": 3.0
+      },
+      {
+        "language": "en_US",
+        "geometry": "1040x700",
+        "text": "A boy. A mysterious companion.\nAn extraordinary journey awaits.",
+        "minimum_ratio": 5.174,
+        "threshold": 4.5
+      },
+      {
+        "language": "en_US",
+        "geometry": "1040x700",
+        "text": "PC RECOMPILATION   /   HAYATOG",
+        "minimum_ratio": 5.597,
+        "threshold": 4.5
+      },
+      {
+        "language": "en_US",
+        "geometry": "1240x820",
+        "text": "A BOND BEYOND WORDS",
+        "minimum_ratio": 9.121,
+        "threshold": 4.5
+      },
+      {
+        "language": "en_US",
+        "geometry": "1240x820",
+        "text": "THE LAST\nGUARDIAN",
+        "minimum_ratio": 5.597,
+        "threshold": 3.0
+      },
+      {
+        "language": "en_US",
+        "geometry": "1240x820",
+        "text": "A boy. A mysterious companion.\nAn extraordinary journey awaits.",
+        "minimum_ratio": 7.452,
+        "threshold": 4.5
+      },
+      {
+        "language": "en_US",
+        "geometry": "1240x820",
+        "text": "PC RECOMPILATION   /   HAYATOG",
+        "minimum_ratio": 11.938,
+        "threshold": 4.5
+      },
+      {
+        "language": "en_US",
+        "geometry": "1920x1080",
+        "text": "A BOND BEYOND WORDS",
+        "minimum_ratio": 9.465,
+        "threshold": 4.5
+      },
+      {
+        "language": "en_US",
+        "geometry": "1920x1080",
+        "text": "THE LAST\nGUARDIAN",
+        "minimum_ratio": 13.835,
+        "threshold": 3.0
+      },
+      {
+        "language": "en_US",
+        "geometry": "1920x1080",
+        "text": "A boy. A mysterious companion.\nAn extraordinary journey awaits.",
+        "minimum_ratio": 11.06,
+        "threshold": 4.5
+      },
+      {
+        "language": "en_US",
+        "geometry": "1920x1080",
+        "text": "PC RECOMPILATION   /   HAYATOG",
+        "minimum_ratio": 13.993,
+        "threshold": 4.5
+      }
+    ],
+    "dialog_text": [
+      {
+        "text": "PS4 button",
+        "ratio": 9.663
+      },
+      {
+        "text": "Keys / mouse",
+        "ratio": 9.663
+      },
+      {
+        "text": "Default",
+        "ratio": 9.663
+      },
+      {
+        "text": "PS4 button",
+        "ratio": 9.663
+      },
+      {
+        "text": "Keys / mouse",
+        "ratio": 9.663
+      },
+      {
+        "text": "Default",
+        "ratio": 9.663
+      },
+      {
+        "text": "Cross (X) — jump",
+        "ratio": 9.663
+      },
+      {
+        "text": "Space",
+        "ratio": 5.431
+      },
+      {
+        "text": "Circle",
+        "ratio": 9.663
+      },
+      {
+        "text": "Left Shift",
+        "ratio": 5.431
+      },
+      {
+        "text": "Square",
+        "ratio": 9.663
+      },
+      {
+        "text": "E|Mouse Middle",
+        "ratio": 5.431
+      },
+      {
+        "text": "Triangle — grab, hold on",
+        "ratio": 9.663
+      },
+      {
+        "text": "Q|Mouse Left",
+        "ratio": 5.431
+      },
+      {
+        "text": "L1",
+        "ratio": 9.663
+      },
+      {
+        "text": "1",
+        "ratio": 5.431
+      },
+      {
+        "text": "R1 — call Trico",
+        "ratio": 9.663
+      },
+      {
+        "text": "3|Mouse Right",
+        "ratio": 5.431
+      },
+      {
+        "text": "L2",
+        "ratio": 9.663
+      },
+      {
+        "text": "R",
+        "ratio": 5.431
+      },
+      {
+        "text": "R2",
+        "ratio": 9.663
+      },
+      {
+        "text": "F",
+        "ratio": 5.431
+      },
+      {
+        "text": "L3",
+        "ratio": 9.663
+      },
+      {
+        "text": "Z",
+        "ratio": 5.431
+      },
+      {
+        "text": "R3",
+        "ratio": 9.663
+      },
+      {
+        "text": "C",
+        "ratio": 5.431
+      },
+      {
+        "text": "Options — menu",
+        "ratio": 9.663
+      },
+      {
+        "text": "Return",
+        "ratio": 5.431
+      },
+      {
+        "text": "Touchpad (left) — photo mode",
+        "ratio": 9.663
+      },
+      {
+        "text": "Tab",
+        "ratio": 5.431
+      },
+      {
+        "text": "Touchpad (right) — pause",
+        "ratio": 9.663
+      },
+      {
+        "text": "Backspace",
+        "ratio": 5.431
+      },
+      {
+        "text": "D-pad up",
+        "ratio": 9.663
+      },
+      {
+        "text": "I",
+        "ratio": 5.431
+      },
+      {
+        "text": "D-pad down",
+        "ratio": 9.663
+      },
+      {
+        "text": "K",
+        "ratio": 5.431
+      },
+      {
+        "text": "D-pad left",
+        "ratio": 9.663
+      },
+      {
+        "text": "J",
+        "ratio": 5.431
+      },
+      {
+        "text": "D-pad right",
+        "ratio": 9.663
+      },
+      {
+        "text": "L",
+        "ratio": 5.431
+      },
+      {
+        "text": "Click Set and press a key or mouse button, or type SDL names (Space, Left Shift, Mouse Left, Mouse X1, Wheel Up…). \"|\" gives several: Q|Mouse Left. \"none\": no key. Empty: the default (grey). Applies at the next start.",
+        "ratio": 5.431
+      },
+      {
+        "text": "Drop shadPS4/GoldHEN cheat XML files in the mods folder, then turn them on here. Nothing here changes the game until you enable it.",
+        "ratio": 9.663
+      },
+      {
+        "text": "A cheat can crash the game or behave oddly; if that happens, turn it off here.",
+        "ratio": 5.411
+      },
+      {
+        "text": "No cheat XML files found in the mods folder yet.",
+        "ratio": 5.431
+      }
+    ]
+  }
+}

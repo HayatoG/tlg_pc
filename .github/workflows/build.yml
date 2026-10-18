@@ -101,6 +101,8 @@ jobs:
         run: |
           export MSYS2_ROOT=$(cygpath -u "$MSYS2_ROOT")
           TLG_LTO=OFF bash build.sh
+      - name: Regression - speculative fault recovery
+        run: python -m unittest discover -s tests -p test_windows_fault_recovery.py -v
       - name: Package
         env:
           MSYS2_ROOT: ${{ runner.temp }}/msys64

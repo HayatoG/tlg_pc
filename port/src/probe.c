@@ -220,8 +220,9 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
         }
     }
     if (code==EXCEPTION_ACCESS_VIOLATION && record->NumberParameters>=2) {
-        /* GPU page tracking (write-protected guest pages) is resolved first. */
-        if (gpu_enabled && tlggpu_handle_fault(info,(void *)record->ExceptionInformation[1])) return EXCEPTION_CONTINUE_EXECUTION;
+        /* Speculative reads must recover before GPU readback, as in the POSIX handler below.
+         * Draw-preparation workers may hold the pipeline cache's shared lock here. A readback
+         * waits for the GPU thread, which may need that same cache exclusively: deadlock. */
         if (runtime_fault_recover) {
             /* A speculative guest memory read (GPU draw preparation) faulted: the thread resumes
              * in tlg_longjmp, outside the exception dispatcher, back at its recovery point. */
@@ -234,6 +235,8 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
             c->Rip=(DWORD64)(uintptr_t)tlg_longjmp;
             return EXCEPTION_CONTINUE_EXECUTION;
         }
+        /* Only non-speculative accesses may wait for GPU page tracking/readback. */
+        if (gpu_enabled && tlggpu_handle_fault(info,(void *)record->ExceptionInformation[1])) return EXCEPTION_CONTINUE_EXECUTION;
     }
     if (code==EXCEPTION_ACCESS_VIOLATION || code==EXCEPTION_ILLEGAL_INSTRUCTION || code==EXCEPTION_PRIV_INSTRUCTION ||
         code==EXCEPTION_STACK_OVERFLOW || code==EXCEPTION_INT_DIVIDE_BY_ZERO || code==EXCEPTION_DATATYPE_MISALIGNMENT) {

@@ -1,0 +1,136 @@
+{
+  "source_commit": "b8d5f412398fae52a444400a9b5131bc1c970cc3",
+  "inventory": {
+    "vars": [
+      "game_dir",
+      "mouse_enabled",
+      "mouse_invert_y",
+      "mouse_sensitivity",
+      "native_audio",
+      "show_fps",
+      "system_lib_dir",
+      "vram_budget_mb",
+      "vsync"
+    ],
+    "filters": [
+      "color_adjust",
+      "color_brightness",
+      "color_contrast",
+      "color_gamma",
+      "color_saturation",
+      "smaa"
+    ],
+    "buttons": [
+      "Browse…",
+      "Browse…",
+      "Keyboard and mouse buttons…",
+      "Quit",
+      "Play",
+      "Logs folder",
+      "Mods / Cheats…",
+      "Saves folder",
+      "Clear shader cache"
+    ],
+    "checks": [
+      "Native audio (libSceNgs2.sprx from your console)",
+      "Mouse turns the camera",
+      "Invert mouse Y axis",
+      "VSync",
+      "Show FPS overlay at start (F10 toggles)",
+      "SMAA anti-aliasing (smooths edges; the HUD too)",
+      "Color adjustments"
+    ],
+    "combos": [
+      [
+        "English",
+        "Português (Brasil)",
+        "Español (Latinoamérica)",
+        "Français (Canada)"
+      ],
+      [
+        "Automatic (system)",
+        "Português (Brasil)",
+        "English (US)"
+      ],
+      [
+        "Windowed",
+        "Borderless window",
+        "Fullscreen"
+      ],
+      [
+        "30 FPS (as on PS4)",
+        "60 FPS",
+        "Unlocked (up to the display)"
+      ],
+      [
+        "Off",
+        "RCAS (FSR 1)",
+        "CAS (AMD)"
+      ]
+    ],
+    "spins": [
+      [
+        "0.1",
+        "5.0",
+        "0.1"
+      ],
+      [
+        "2000",
+        "24000",
+        "200"
+      ],
+      [
+        "-0.5",
+        "0.5",
+        "0.05"
+      ],
+      [
+        "0.5",
+        "1.5",
+        "0.05"
+      ],
+      [
+        "0.0",
+        "2.0",
+        "0.05"
+      ],
+      [
+        "0.5",
+        "2.0",
+        "0.05"
+      ]
+    ],
+    "links": [
+      "YouTube channel: @hayatog-dev",
+      "Discord community",
+      "♥ Sponsor on GitHub"
+    ],
+    "remap_entries": 17,
+    "remap_buttons": [
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Set",
+      "Reset all",
+      "Close"
+    ],
+    "mods_buttons": [
+      "Open mods folder",
+      "Refresh list",
+      "Close"
+    ]
+  }
+}
