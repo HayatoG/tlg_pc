@@ -27,12 +27,17 @@ PORT_DIR = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).r
 sys.path.insert(0, str(PORT_DIR / 'scripts'))
 import mod_patches  # noqa: E402
 REPO_DIR = PORT_DIR.parent
-OUT_DIR = PORT_DIR / 'out'
-USER_DIR = PORT_DIR / 'user'
+# Writeable dirs (out/, user/): a read-only mount (the Linux AppImage, a sandboxed package) has
+# nowhere to write under PORT_DIR, so TLG_DATA_DIR moves them to a writable root; the shipped
+# binaries and libraries stay in the package (PORT_OUT_DIR).
+DATA_DIR = Path(os.environ['TLG_DATA_DIR']) if os.environ.get('TLG_DATA_DIR') else PORT_DIR
+OUT_DIR = DATA_DIR / 'out'
+USER_DIR = DATA_DIR / 'user'
+PORT_OUT_DIR = PORT_DIR / 'out'
 MODS_DIR = USER_DIR / 'mods'          # shadPS4/GoldHEN cheat XML files the player drops in
 MODS_CONFIG = USER_DIR / 'mods.json'  # {"enabled": [...], "disabled": [...]}
 LOG_DIR = OUT_DIR / 'logs'
-PROBE = OUT_DIR / ('tlg-probe.exe' if os.name == 'nt' else 'tlg-probe')
+PROBE = PORT_OUT_DIR / ('tlg-probe.exe' if os.name == 'nt' else 'tlg-probe')
 KEEP_LOGS = 30
 
 # Game language: the engine's own ids (NOT the PS4 system ones), looked up through
@@ -361,7 +366,7 @@ def cpu_missing_sets(log=print):
     that lacks a set nothing can rewrite (AVX and older) stops here (exit 20) with the probe's reason.
     The probe gets the same library path as the game (out/lib in the Linux package)."""
     env = os.environ.copy()
-    bundled = OUT_DIR / 'lib'
+    bundled = PORT_OUT_DIR / 'lib'
     if os.name != 'nt' and bundled.is_dir():
         env['LD_LIBRARY_PATH'] = os.pathsep.join(filter(None, [str(bundled), os.environ.get('LD_LIBRARY_PATH')]))
     try:
@@ -455,8 +460,9 @@ def build_env(settings, extra=None):
         env.setdefault('TLG_VBLANK_HZ', '0')
     restart = f'"{sys.executable}" --play' if FROZEN else f'"{sys.executable}" "{Path(__file__).resolve()}"'
     env.setdefault('TLG_RESTART_COMMAND', restart)
-    # Linux package: the libraries built with the port (SDL3, FFmpeg, ...) are in out/lib.
-    bundled = OUT_DIR / 'lib'
+    # Linux package: the libraries built with the port (SDL3, FFmpeg, ...) are in out/lib, part
+    # of the package (PORT_OUT_DIR), not the writable out/ from TLG_DATA_DIR.
+    bundled = PORT_OUT_DIR / 'lib'
     if os.name != 'nt' and bundled.is_dir():
         env['LD_LIBRARY_PATH'] = os.pathsep.join(filter(None, [str(bundled), os.environ.get('LD_LIBRARY_PATH')]))
     # Shaders and pipelines beside the saves (the GPU reads it when it starts; before, Linux used
