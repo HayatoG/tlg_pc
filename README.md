@@ -13,6 +13,10 @@
 
 <p align="center"><a href="https://github.com/HayatoG/tlg_pc/actions/workflows/build.yml"><img src="https://github.com/HayatoG/tlg_pc/actions/workflows/build.yml/badge.svg" alt="Build"></a></p>
 
+<p align="center"><a href="https://youtu.be/F5sD_HCGCWo"><img src="docs/screenshots/video-tutorial.jpg" width="640" alt="Como portar jogos de PS4 — vídeo no YouTube"></a></p>
+
+<p align="center">▶️ <a href="https://youtu.be/F5sD_HCGCWo"><b>Vídeo tutorial:</b> como portar jogos de PS4 para o PC</a></p>
+
 **The Last Guardian** (PS4, CUSA03627 US / CUSA03745 UE, update 01.03) rodando no PC com imagem, som, controle, mouse e teclado e saves, a 30 FPS estáveis (60 FPS e FPS livre opcionais, experimentais) e sem emulador de CPU. O código original do jogo roda nativo no processador. O sistema do PS4 é reimplementado, e a GPU é traduzida para Vulkan.
 
 > **Nenhum arquivo do jogo vem com este projeto.** Para jogar, você precisa da sua própria cópia, tirada do seu PS4.
