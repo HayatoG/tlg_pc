@@ -121,10 +121,12 @@ TEXT = {
     'already': ('The game is already running.', 'O jogo já está rodando.'),
     'error': ('Error', 'Erro'),
     'port_by': ('PC port by HayatoG', 'Port para PC por HayatoG'),
+    'coffee': ('Buy me a coffee', 'Apoie com um café'),
     'channel': ('YouTube channel: @hayatog-dev', 'Canal no YouTube: @hayatog-dev'),
     'discord': ('Discord community', 'Comunidade no Discord'),
     'sponsor': ('♥ Sponsor on GitHub', '♥ Apoie no GitHub'),
 }
+COFFEE_URL = 'https://buymeacoffee.com/hayatog'
 CHANNEL_URL = 'https://www.youtube.com/@hayatog-dev'
 DISCORD_URL = 'https://discord.gg/UMkdMYZh9g'
 SPONSOR_URL = 'https://github.com/sponsors/HayatoG'
@@ -244,6 +246,13 @@ class Launcher:
         credits = ttk.Frame(header)
         credits.pack(side='right', anchor='ne')
         ttk.Label(credits, text=self.t('port_by'), foreground='#777').pack(anchor='e')
+        self.coffee_button = tk.Button(credits, text='☕  ' + self.t('coffee'),
+                                       command=lambda: webbrowser.open(COFFEE_URL),
+                                       background='#FFDD00', foreground='#000000',
+                                       activebackground='#FFE873', activeforeground='#000000',
+                                       font=('TkDefaultFont', 10, 'bold'), cursor='hand2',
+                                       relief='flat', padx=12, pady=7)
+        self.coffee_button.pack(anchor='e', pady=(6, 8))
         for key, url in (('channel', CHANNEL_URL), ('discord', DISCORD_URL), ('sponsor', SPONSOR_URL)):
             link = ttk.Label(credits, text=self.t(key), foreground='#2a6fdb', cursor='hand2',
                              font=('TkDefaultFont', 10, 'underline'))

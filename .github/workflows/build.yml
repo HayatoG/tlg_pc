@@ -180,6 +180,8 @@ jobs:
           Build automático do commit ${short}. **Nenhum arquivo do jogo incluído**: veja o README-player.md dentro do pacote para o que copiar do seu PS4.
           Automatic build of commit ${short}. **No game files included**: see README-player.md inside the package for what to copy from your PS4.
 
+          ☕ Apoie o desenvolvimento / Support development: [Buy me a coffee](https://buymeacoffee.com/hayatog)
+
           - Linux x86-64 (glibc 2.39+): \`tlg-linux-x86_64.tar.gz\`
           - Windows 10/11 64-bit: \`tlg-windows-x86_64.zip\` (ainda não testado em jogo / not yet tested in game)
 

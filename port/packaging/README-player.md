@@ -165,3 +165,10 @@ While the game window has focus, it takes the mouse and the mouse turns the came
 ---
 
 This project is not affiliated with Sony Interactive Entertainment, SIE Japan Studio or genDESIGN. The Last Guardian is a trademark of Sony Interactive Entertainment. / Este projeto não tem vínculo com a Sony Interactive Entertainment, SIE Japan Studio ou genDESIGN.
+
+## Apoie o desenvolvimento / Support development
+
+☕ [Apoie com um café / Buy me a coffee](https://buymeacoffee.com/hayatog)
+
+Apoio opcional para continuar desenvolvendo os ports. Os ports continuam gratuitos.
+Optional support for continued port development. The ports remain free.
