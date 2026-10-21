@@ -42,6 +42,19 @@ struct Values {
     std::atomic<float> reactive_max{0.9f};
     std::atomic<int> debug_view{DebugNone};
     std::atomic<bool> show_fps{false};
+    /// DLAA (NVIDIA DLSS at native size on the game's motion vectors, vk_temporal_upscaler);
+    /// off: the game's own SMAA only. F8 switches it (a label shows which one for a moment).
+    std::atomic<bool> dlaa{false};
+    /// Debug (launcher, at start; tlg_lua.cpp): the game's level select and QA menu, and the
+    /// collapsing bridge fix (skips the slow motion that can freeze the game in the pit).
+    std::atomic<bool> level_select{false}, bridge_fix{false};
+    /// Enhancements (menu, live): shadow map resolution as a multiple of the game's 2048
+    /// (1, 2 or 4; vk_scene_resolution SetShadowScale). 8192 looked barely different, ~8 FPS.
+    std::atomic<int> shadow_scale{1};
+    /// Game effects (menu, live): percent of the game's own value, written into its
+    /// post-process and camera objects through Lua (tlg_lua.cpp). 100 = as shipped.
+    std::atomic<int> bloom{100}, dof{100}, motion_blur{100}, chromatic{0}, vignette{0},
+        ssao{100}, ssr{100}, game_sharpen{100}, shadow_distance{100}, lod{100};
     /// Performance overlay (tlg_perf_stats.h): items shown, font size and background opacity
     /// in percent, corner (0 top left, 1 top right, 2 bottom left, 3 bottom right), layout
     /// (0 one line, 1 one item per line). menu_tab: the menu's last tab.
@@ -86,6 +99,8 @@ struct Values {
     std::atomic<int> engine_fps{120};
     std::atomic<bool> deferred_readback{true};
     std::atomic<bool> stale_readback{true};
+    /// The game's own HDR10 output (BT.2020 PQ) when Windows HDR is on (TLG_HDR overrides).
+    std::atomic<bool> hdr{true};
     /// Set before an "Apply and restart"; cleared once the new launch shows the game. run.py
     /// restores the previous startup options when a launch never cleared it.
     std::atomic<bool> restart_unconfirmed{false};
@@ -93,7 +108,7 @@ struct Values {
     /// The engine rate this launch really runs at (run.py's TLG_ENGINE_FPS): 60 when the frame
     /// rate patch does not apply to this game build.
     std::atomic<int> applied_engine_fps{120};
-    bool startup_deferred_readback = true, startup_stale_readback = true;
+    bool startup_deferred_readback = true, startup_stale_readback = true, startup_hdr = true;
     // FSR 4 checks (menu): the provider's auto exposure, the jitter sign it is given.
     std::atomic<bool> fsr4_auto_exposure{true};
     std::atomic<bool> fsr4_invert_jitter{false};

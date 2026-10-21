@@ -41,6 +41,15 @@ TEXT = {
     'fps_unlocked': ('Unlocked (up to the display)', 'Livre (até a taxa do monitor)'),
     'fps_hint': ('60/unlocked patch eboot 1.03 in memory; see docs/60fps.md',
                  '60/livre alteram o eboot 1.03 na memória; ver docs/60fps.md'),
+    'debug': ('Debug (at start)', 'Depuração (ao iniciar)'),
+    'level_select': ('Level select and QA menu', 'Seleção de fases e menu de QA'),
+    'bridge_fix': ('Collapsing bridge freeze fix', 'Correção do travamento da ponte que desaba'),
+    'debug_hint': ('Level select: hold L1 while the title menu closes (Continue/New Game). QA menu: in game, hold L1 and press L3. '
+                   'Bridge fix: only if the game freezes when the bridge in the pit collapses; skips that slow motion. '
+                   'GoldHEN patches by illusiony and DanielSvoboda.',
+                   'Seleção de fases: segure L1 enquanto o menu inicial fecha (Continuar/Novo jogo). Menu de QA: no jogo, segure L1 e aperte L3. '
+                   'Correção da ponte: só se o jogo travar quando a ponte do fosso desaba; pula essa câmera lenta. '
+                   'Patches GoldHEN de illusiony e DanielSvoboda.'),
     'show_fps': ('Show FPS overlay at start (F10 toggles)', 'Mostrar overlay de FPS ao iniciar (F10 alterna)'),
     'vram': ('Texture cache budget (MB of VRAM)', 'Orçamento do cache de texturas (MB de VRAM)'),
     'vram_hint': ('6 GB card: 5600 · 8 GB: 7000 · 12 GB: 10500 · 16 GB: 14000 · 24 GB: 21500. This is video card memory (VRAM), not RAM; never above your card\'s VRAM.',
@@ -48,6 +57,12 @@ TEXT = {
     'filters': ('Image filters (live in the in-game menu too, Insert → Image)',
                 'Filtros de imagem (também no menu do jogo, Insert → Imagem)'),
     'smaa': ('SMAA anti-aliasing (smooths edges; the HUD too)', 'Anti-aliasing SMAA (suaviza bordas; o HUD também)'),
+    'dlaa': ('DLAA anti-aliasing, experimental (NVIDIA RTX: stable foliage edges; F8 in game)',
+             'Anti-aliasing DLAA, experimental (NVIDIA RTX: bordas estáveis na folhagem; F8 no jogo)'),
+    'dlaa_hint': ('Not yet tested in a full playthrough: some scenes may still flicker or show blocks '
+                  '(as on the cave water and on the face of the boy before). Press F8 to turn it off there, and please report it.',
+                  'Ainda não testado num jogo completo: algumas cenas ainda podem piscar ou mostrar blocos '
+                  '(como na água da caverna e no rosto do menino antes). Aperte F8 para desligar ali e, por favor, avise.'),
     'sharpening': ('Sharpening', 'Nitidez'),
     'sharpen_off': ('Off', 'Desligada'),
     'sharpen_rcas': ('RCAS (FSR 1)', 'RCAS (FSR 1)'),
@@ -95,6 +110,48 @@ TEXT = {
                            '{size} liberados, mas {count} arquivo(s) não puderam ser apagados (em uso? Feche o '
                            'jogo e tente de novo).'),
     'mods': ('Mods / Cheats…', 'Mods / Cheats…'),
+    'menu_note': ('In game, press Insert for the graphics menu: every setting there applies live.',
+                  'No jogo, aperte Insert para o menu de gráficos: tudo nele vale na hora.'),
+    'graphics': ('Graphics…', 'Gráficos…'),
+    'graphics_title': ('Graphics', 'Gráficos'),
+    'graphics_hint': ('The same settings are in the in-game graphics menu (press Insert in game), where changes '
+                      'show right away. 100% is the game as shipped.',
+                      'As mesmas configurações estão no menu de gráficos do jogo (aperte Insert no jogo), onde as '
+                      'mudanças aparecem na hora. 100% é o jogo original.'),
+    'hdr_hint': ("The game's own HDR10 output, used when HDR is on in Windows display settings. Recommended: on.",
+                 'A saída HDR10 do próprio jogo, usada quando o HDR está ligado nas configurações de tela do Windows. '
+                 'Recomendado: ligado.'),
+    'shadow_scale': ('Shadow resolution', 'Resolução das sombras'),
+    'shadow_game': ('Game (2048)', 'Jogo (2048)'),
+    'shadow_hint': ("Draws the shadow maps at 2x or 4x the game's 2048x2048. Recommended: Game (2048). The sharper "
+                    'edges are hard to see, and 8192 costs about 8 FPS and about 1 GB of video memory.',
+                    'Desenha os mapas de sombra em 2x ou 4x os 2048x2048 do jogo. Recomendado: Jogo (2048). As bordas '
+                    'mais nítidas são difíceis de notar, e 8192 custa cerca de 8 FPS e cerca de 1 GB de memória de vídeo.'),
+    'effects': ('Game effects (100% = as shipped)', 'Efeitos do jogo (100% = original)'),
+    'effect_ssao': ('Ambient occlusion', 'Oclusão de ambiente'),
+    'effect_ssao_hint': ('Strength of the contact shadows in corners and under grass. 0% turns the pass off (saves a '
+                         'little GPU time). Above 150% the half-resolution AO shows blocky halos.',
+                         'Força das sombras de contato em cantos e sob a grama. 0% desliga o passe (economiza um pouco '
+                         'de GPU). Acima de 150% a AO em meia resolução mostra halos em blocos.'),
+    'effect_bloom': ('Bloom', 'Bloom'),
+    'effect_bloom_hint': ('Glow around bright light. 0% turns the pass off.', 'Brilho em volta da luz forte. 0% desliga o passe.'),
+    'effect_ssr': ('Screen-space reflections', 'Reflexos em espaço de tela'),
+    'effect_ssr_hint': ('Reflections and light glare on water and wet stone. 0% turns the pass off.',
+                        'Reflexos e brilho de luz na água e na pedra molhada. 0% desliga o passe.'),
+    'effect_motion_blur': ('Motion blur', 'Desfoque de movimento'),
+    'effect_motion_blur_hint': ('Camera motion blur. 0% turns the pass off.', 'Desfoque ao mover a câmera. 0% desliga o passe.'),
+    'effect_chromatic_add': ('Chromatic aberration', 'Aberração cromática'),
+    'effect_chromatic_add_hint': ('Color fringes toward the screen edges. The game ships with this off: 0% is as shipped.',
+                                  'Franjas de cor nas bordas da tela. O jogo vem com isto desligado: 0% é o original.'),
+    'effect_vignette_add': ('Vignette', 'Vinheta'),
+    'effect_vignette_add_hint': ('Darkened screen corners. The game ships with this off: 0% is as shipped.',
+                                 'Cantos da tela escurecidos. O jogo vem com isto desligado: 0% é o original.'),
+    'effect_game_sharpen': ('Game sharpening', 'Nitidez do jogo'),
+    'effect_game_sharpen_hint': ("The game's own sharpening filter. The difference is hard to see: 100% recommended.",
+                                 'O filtro de nitidez do próprio jogo. A diferença é difícil de ver: 100% recomendado.'),
+    'effect_lod': ('Character detail distance', 'Distância de detalhe dos personagens'),
+    'effect_lod_hint': ('How far the boy and Trico keep their detailed models. Higher keeps full detail further away.',
+                        'Até onde o menino e o Trico mantêm os modelos detalhados. Mais alto mantém o detalhe completo mais longe.'),
     'mods_title': ('Mods / Cheats', 'Mods / Cheats'),
     'mods_hint': ('Drop shadPS4/GoldHEN cheat XML files in the mods folder, then turn them on here. '
                   'Nothing here changes the game until you enable it.',
@@ -174,10 +231,16 @@ def sdl_key_name(keysym):
 SHARPENERS = ['off', 'rcas', 'cas']
 # Image filters: kept in tlg.ini only (the in-game menu writes the same keys), with their
 # defaults and ranges (tlg_graphics.h).
-INI_DEFAULTS = {'smaa': '0', 'rcas': '1', 'cas': '0', 'color_adjust': '0', 'color_brightness': '0.00',
+INI_DEFAULTS = {'dlaa': '0', 'smaa': '0', 'rcas': '1', 'cas': '0', 'color_adjust': '0', 'color_brightness': '0.00',
                 'color_contrast': '1.00', 'color_saturation': '1.00', 'color_gamma': '1.00'}
 COLOR_RANGES = {'color_brightness': (-0.5, 0.5), 'color_contrast': (0.5, 1.5),
                 'color_saturation': (0.0, 2.0), 'color_gamma': (0.5, 2.0)}
+# Graphics dialog: the in-game menu's HDR, Enhancements and Game effects, same tlg.ini keys
+# (tlg_settings.cpp). Effects: key -> (default, low, high) in percent, the default as shipped.
+SHADOW_SCALES = [1, 2, 4]
+EFFECTS = {'ssao': (100, 0, 400), 'bloom': (100, 0, 400), 'ssr': (100, 0, 400), 'motion_blur': (100, 0, 400),
+           'chromatic_add': (0, 0, 100), 'vignette_add': (0, 0, 100), 'game_sharpen': (100, 0, 400),
+           'lod': (100, 25, 400)}
 
 
 def art_path(settings, name):
@@ -314,6 +377,12 @@ class Launcher:
         spin.bind('<FocusOut>', lambda _: self.changed())
         ttk.Label(video, text=self.t('vram_hint'), foreground='#777', wraplength=360).grid(row=4, column=0, columnspan=2, sticky='w')
         self.build_filters(video, 7)
+        debug = ttk.LabelFrame(middle, text=self.t('debug'), padding=8)
+        debug.grid(sticky='ew', pady=(8, 0))
+        self.check(debug, 0, 'level_select')
+        self.check(debug, 1, 'bridge_fix')
+        ttk.Label(debug, text=self.t('debug_hint'), foreground='#777', wraplength=360, justify='left').grid(
+            row=2, column=0, columnspan=3, sticky='w')
 
         log_frame = ttk.LabelFrame(main, text='Log', padding=4)
         log_frame.grid(row=2, column=2, sticky='nsew', **pad)
@@ -326,12 +395,14 @@ class Launcher:
         buttons = ttk.Frame(main)
         buttons.grid(row=3, column=0, columnspan=3, sticky='ew', pady=(10, 0))
         ttk.Button(buttons, text=self.t('quit'), command=self.quit).pack(side='left')
+        ttk.Label(buttons, text=self.t('menu_note'), foreground='#555', wraplength=300).pack(side='left', padx=12)
         style = ttk.Style()
         style.configure('Play.TButton', font=('TkDefaultFont', 13, 'bold'))
         self.play_button = ttk.Button(buttons, text=self.t('play'), style='Play.TButton', command=self.play)
         self.play_button.pack(side='right', ipadx=30, ipady=8)
         ttk.Button(buttons, text=self.t('logs'), command=lambda: self.open(tlg_run.LOG_DIR)).pack(side='right', padx=6)
         ttk.Button(buttons, text=self.t('mods'), command=self.mods_dialog).pack(side='right', padx=6)
+        ttk.Button(buttons, text=self.t('graphics'), command=self.graphics_dialog).pack(side='right', padx=(6, 0))
         ttk.Button(buttons, text=self.t('saves'), command=lambda: self.open(tlg_run.USER_DIR / 'savedata')).pack(side='right')
         self.cache_button = ttk.Button(buttons, text=self.t('clear_cache'), command=self.clear_cache)
         self.cache_button.pack(side='right', padx=(0, 6))
@@ -367,11 +438,13 @@ class Launcher:
         ini = dict(INI_DEFAULTS)
         ini.update({k: v for k, v in tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini').items() if k in ini})
         self.ini_vars = {}
-        for offset, key in ((2, 'smaa'), (4, 'color_adjust')):
+        for offset, key in ((2, 'smaa'), (4, 'color_adjust'), (9, 'dlaa')):
             var = tk.BooleanVar(value=ini[key] not in ('0', ''))
             self.ini_vars[key] = var
             ttk.Checkbutton(parent, text=self.t(key), variable=var, command=self.filters_changed).grid(
                 row=row + offset, column=0, columnspan=2, sticky='w', pady=2)
+        ttk.Label(parent, text=self.t('dlaa_hint'), foreground='#777', wraplength=360, justify='left').grid(
+            row=row + 10, column=0, columnspan=2, sticky='w', padx=(16, 0))
         ttk.Label(parent, text=self.t('sharpening')).grid(row=row + 3, column=0, sticky='w')
         self.sharpener = ttk.Combobox(parent, values=[self.t('sharpen_' + k) for k in SHARPENERS],
                                       state='readonly', width=16)
@@ -389,7 +462,7 @@ class Launcher:
             spin.bind('<FocusOut>', lambda _: self.filters_changed())
 
     def filters_changed(self):
-        values = {'smaa': int(self.ini_vars['smaa'].get()), 'color_adjust': int(self.ini_vars['color_adjust'].get()),
+        values = {'dlaa': int(self.ini_vars['dlaa'].get()), 'smaa': int(self.ini_vars['smaa'].get()), 'color_adjust': int(self.ini_vars['color_adjust'].get()),
                   'rcas': int(self.sharpener.current() == 1), 'cas': int(self.sharpener.current() == 2)}
         for key, (low, high) in COLOR_RANGES.items():
             try:
@@ -584,6 +657,83 @@ class Launcher:
         bottom.pack(fill='x', pady=(10, 0))
         ttk.Button(bottom, text=self.t('mods_folder'), command=lambda: self.open(tlg_run.mods_dir())).pack(side='left')
         ttk.Button(bottom, text=self.t('mods_refresh'), command=populate).pack(side='left', padx=6)
+        ttk.Button(bottom, text=self.t('close'), command=win.destroy).pack(side='right')
+
+    def graphics_dialog(self):
+        """HDR, shadow resolution and the game's effect strengths (the in-game menu's, Insert),
+        written to tlg.ini right away."""
+        if getattr(self, 'graphics_window', None) and self.graphics_window.winfo_exists():
+            self.graphics_window.lift()
+            return
+        win = self.graphics_window = tk.Toplevel(self.root)
+        win.title(self.t('graphics_title'))
+        win.transient(self.root)
+        frame = ttk.Frame(win, padding=12)
+        frame.pack(fill='both', expand=True)
+        frame.columnconfigure(1, weight=1)
+        ini = tlg_run.read_ini(tlg_run.USER_DIR / 'tlg.ini')
+
+        def number(key, default):
+            try:
+                return int(ini.get(key, default))
+            except ValueError:
+                return default
+
+        def write(values):
+            tlg_run.USER_DIR.mkdir(parents=True, exist_ok=True)
+            tlg_run.update_ini(tlg_run.USER_DIR / 'tlg.ini', values)
+
+        def hint(row, key):
+            ttk.Label(frame, text=self.t(key), foreground='#777', wraplength=560, justify='left').grid(
+                row=row, column=0, columnspan=3, sticky='w', pady=(0, 6))
+
+        ttk.Label(frame, text=self.t('graphics_hint'), wraplength=560, justify='left').grid(
+            row=0, column=0, columnspan=3, sticky='w', pady=(0, 8))
+        hdr = tk.BooleanVar(value=number('hdr', 1) != 0)
+        ttk.Checkbutton(frame, text='HDR', variable=hdr, command=lambda: write({'hdr': int(hdr.get())})).grid(
+            row=1, column=0, columnspan=3, sticky='w')
+        hint(2, 'hdr_hint')
+        ttk.Label(frame, text=self.t('shadow_scale')).grid(row=3, column=0, sticky='w')
+        shadow = ttk.Combobox(frame, values=[self.t('shadow_game'), '4096', '8192'], state='readonly', width=14)
+        scale = number('shadow_scale', 1)
+        shadow.current(2 if scale >= 4 else 1 if scale >= 2 else 0)
+        shadow.grid(row=3, column=1, sticky='w', padx=6)
+        shadow.bind('<<ComboboxSelected>>', lambda _: write({'shadow_scale': SHADOW_SCALES[shadow.current()]}))
+        hint(4, 'shadow_hint')
+        ttk.Separator(frame).grid(row=5, column=0, columnspan=3, sticky='ew', pady=4)
+        ttk.Label(frame, text=self.t('effects'), foreground='#555').grid(row=6, column=0, columnspan=3, sticky='w')
+
+        sliders = {}
+        for index, (key, (default, low, high)) in enumerate(EFFECTS.items()):
+            row = 7 + index * 2
+            value = min(max(number(key, default), low), high)
+            ttk.Label(frame, text=self.t('effect_' + key)).grid(row=row, column=0, sticky='w')
+            shown = ttk.Label(frame, text=f'{value}%', width=5)
+            shown.grid(row=row, column=2, sticky='e')
+
+            def moved(raw, key=key, shown=shown, current={'value': value}):
+                step = int(round(float(raw) / 5) * 5)  # 5% steps
+                shown.configure(text=f'{step}%')
+                if step != current['value']:
+                    current['value'] = step
+                    write({key: step})
+
+            slider = ttk.Scale(frame, from_=low, to=high, value=value, length=260, command=moved)
+            slider.grid(row=row, column=1, sticky='ew', padx=6)
+            sliders[key] = (slider, moved)
+            hint(row + 1, 'effect_' + key + '_hint')
+
+        def reset():
+            hdr.set(True)
+            shadow.current(0)
+            write({'hdr': 1, 'shadow_scale': 1})
+            for key, (slider, moved) in sliders.items():
+                slider.set(EFFECTS[key][0])
+                moved(EFFECTS[key][0])
+
+        bottom = ttk.Frame(frame)
+        bottom.grid(row=7 + len(EFFECTS) * 2, column=0, columnspan=3, sticky='ew', pady=(10, 0))
+        ttk.Button(bottom, text=self.t('reset'), command=reset).pack(side='left')
         ttk.Button(bottom, text=self.t('close'), command=win.destroy).pack(side='right')
 
     def check(self, parent, row, key):

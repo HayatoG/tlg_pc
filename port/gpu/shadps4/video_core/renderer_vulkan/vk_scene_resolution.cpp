@@ -78,8 +78,19 @@ static u32 SizeDivisor(const VideoCore::ImageInfo& i, SceneResolution::Size scen
     }
     return 0;
 }
+u32 SceneTargets::Upscale(const VideoCore::Image& image) const {
+    const auto& i = image.info;
+    return shadow_scale > 1 && i.props.is_depth && i.size.width == 2048 && i.size.height == 2048 &&
+                   i.size.depth == 1 && i.resources.layers <= 8 && i.resources.levels == 1 &&
+                   i.num_samples == 1 && image.backing && image.backing->num_samples == 1
+               ? shadow_scale
+               : 0;
+}
 bool SceneTargets::Eligible(const VideoCore::Image& image) const {
     const auto& i = image.info;
+    if (Upscale(image)) {
+        return Blittable(image.backing->image.image_ci.format) || ShaderResampled(image);
+    }
     const u32 div = SizeDivisor(i, size);
     if (!div || i.size.depth != 1 || i.resources.layers != 1 || i.num_samples != 1 ||
         i.props.is_block || !image.backing || image.backing->num_samples != 1) {
@@ -96,17 +107,38 @@ bool SceneTargets::EligibleScene(const VideoCore::Image& image) const {
     return image.info.size.width == 1920 && image.info.size.height == 1080 && Eligible(image);
 }
 SceneResolution::Size SceneTargets::ProxySize(const VideoCore::Image& image, u32 level) const {
+    if (const u32 k = Upscale(image)) {
+        return {std::max(1u, image.info.size.width * k >> level),
+                std::max(1u, image.info.size.height * k >> level)};
+    }
     const u32 div = std::max(1u, SizeDivisor(image.info, size));
     return {std::max(1u, size.width / div >> level), std::max(1u, size.height / div >> level)};
 }
-bool SceneTargets::SetSize(SceneResolution::Size next) {
-    if (next == size) return false;
+void SceneTargets::Reset() {
     ResolveAll();
     scheduler.Finish();
     entries.clear(); // no command buffer can still reference these images/views
     tracked.clear();
     ++generation;
     recent = {};
+}
+bool SceneTargets::SetShadowScale(u32 scale) {
+    if (scale == shadow_scale) return false;
+    Reset();
+    shadow_scale = scale;
+    std::printf("Shadow maps: %ux native (live)\n", scale);
+    return true;
+}
+void SceneTargets::ShadowReport() {
+    if (shadow_scale < 2 || ++shadow_frames < 120) return;
+    std::printf("Shadow maps %ux: %u proxy passes, %u proxy samples, %u fills, %u resolves "
+                "(120 frames)\n", shadow_scale, shadow_passes, shadow_samples, shadow_fills,
+                shadow_resolves);
+    shadow_frames = shadow_passes = shadow_samples = shadow_fills = shadow_resolves = 0;
+}
+bool SceneTargets::SetSize(SceneResolution::Size next) {
+    if (next == size) return false;
+    Reset();
     size = next;
     std::printf("Scene resolution: raster %ux%u, half-resolution targets %ux%u, UI 1920x1080 "
                 "(live)\n", size.width, size.height, size.width / 2, size.height / 2);
@@ -141,7 +173,7 @@ void SceneTargets::Transition(Entry& e, vk::ImageAspectFlags aspect, vk::ImageLa
         .srcAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite,
         .dstStageMask = stages, .dstAccessMask = access,
         .oldLayout = e.layout, .newLayout = layout,
-        .image = e.image, .subresourceRange = {aspect, 0, 1, 0, 1},
+        .image = e.image, .subresourceRange = {aspect, 0, 1, 0, VK_REMAINING_ARRAY_LAYERS},
     };
     scheduler.Record([barrier](vk::CommandBuffer cmd) {
         cmd.pipelineBarrier2({.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
@@ -150,6 +182,7 @@ void SceneTargets::Transition(Entry& e, vk::ImageAspectFlags aspect, vk::ImageLa
 }
 void SceneTargets::Copy(Entry& e, VideoCore::Image& original, bool to_native) {
     copying = true;
+    if (Upscale(original)) ++(to_native ? shadow_resolves : shadow_fills);
     scheduler.EndRendering();
     const Runtime::TransferMark mark{runtime, to_native ? "scene proxy resolve" : "scene proxy fill",
                                      original};
@@ -184,7 +217,8 @@ void SceneTargets::Copy(Entry& e, VideoCore::Image& original, bool to_native) {
         copying = false;
         return;
     }
-    const VideoCore::SubresourceRange level_range{.base = {e.level, 0}, .extent = {1, 1}};
+    const u32 layers = e.image.image_ci.arrayLayers;
+    const VideoCore::SubresourceRange level_range{.base = {e.level, 0}, .extent = {1, layers}};
     runtime.Transit(&original, to_native ? vk::ImageLayout::eTransferDstOptimal
                                        : vk::ImageLayout::eTransferSrcOptimal,
                     vk::PipelineStageFlagBits2::eTransfer,
@@ -203,9 +237,9 @@ void SceneTargets::Copy(Entry& e, VideoCore::Image& original, bool to_native) {
                         vk::ImageAspectFlagBits::eStencil}) {
         if (!(original.aspect_mask & aspect)) continue;
         const vk::ImageBlit region{
-            .srcSubresource = {aspect, to_native ? 0u : e.level, 0, 1},
+            .srcSubresource = {aspect, to_native ? 0u : e.level, 0, layers},
             .srcOffsets = std::array{vk::Offset3D{}, to_native ? reduced : native},
-            .dstSubresource = {aspect, to_native ? e.level : 0u, 0, 1},
+            .dstSubresource = {aspect, to_native ? e.level : 0u, 0, layers},
             .dstOffsets = std::array{vk::Offset3D{}, to_native ? native : reduced},
         };
         // Nearest preserves depth/stencil and avoids assuming linear blit support for
@@ -421,9 +455,13 @@ vk::ImageView SceneTargets::View(Entry& e, const VideoCore::Image& original,
         ? (info.is_storage ? original.aspect_mask : vk::ImageAspectFlags(vk::ImageAspectFlagBits::eDepth))
         : vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor);
     const auto format = original.info.props.is_depth ? original.backing->image.image_ci.format : info.format;
+    // Layered proxies (shadow cascades) keep the view's layers.
+    const u32 layers = std::max(1u, u32(info.range.extent.layers));
+    const bool array = info.type == AmdGpu::ImageType::Color2DArray || layers > 1;
     auto view = Check(instance.GetDevice().createImageViewUnique({
-        .image = e.image, .viewType = vk::ImageViewType::e2D, .format = format,
-        .components = info.mapping, .subresourceRange = {aspect,0,1,0,1},
+        .image = e.image, .viewType = array ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D,
+        .format = format, .components = info.mapping,
+        .subresourceRange = {aspect, 0, 1, u32(info.range.base.layer), layers},
     }));
     const auto result = *view;
     e.views.emplace_back(info, std::move(view));
@@ -445,12 +483,14 @@ SceneTargets::Target SceneTargets::Attachment(VideoCore::ImageId id,
                   : vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite);
     }
     e.state.ProxyWrite();
+    if (Upscale(original)) ++shadow_passes;
     auto attachment_info = info;
     attachment_info.is_storage = true; // include stencil in attachment views
     return {e.image, View(e, original, attachment_info), e.layout, e.image.image_ci.usage};
 }
 bool SceneTargets::ProxyCurrent(const VideoCore::Image& image, u32 level, u32 levels) const {
-    if (copying || !image.scene_proxy || image.info.props.is_depth || levels != 1) {
+    if (copying || !image.scene_proxy || (image.info.props.is_depth && !Upscale(image)) ||
+        levels != 1) {
         return false;
     }
     const auto it = entries.find(Key(image.image_uid, level));
@@ -476,6 +516,7 @@ std::optional<SceneTargets::Target> SceneTargets::SampleProxy(
     }
     auto& e = *entries.find(Key(image.image_uid, level))->second;
     const auto layout = PrepareSample(image, level);
+    if (Upscale(image)) ++shadow_samples;
     return Target{e.image, View(e, image, info), layout, e.image.image_ci.usage};
 }
 SceneTargets::Target SceneTargets::Read(VideoCore::ImageId id,

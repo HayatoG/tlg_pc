@@ -9,6 +9,7 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace TlgSettings {
 
@@ -17,6 +18,19 @@ namespace {
 const char* Path() {
     const char* env = std::getenv("TLG_CONFIG");
     return env && env[0] ? env : "tlg.ini";
+}
+
+using Effect = std::atomic<int> Values::*;
+constexpr std::pair<const char*, Effect> EffectKeys[] = {
+    {"bloom", &Values::bloom}, {"dof", &Values::dof}, {"motion_blur", &Values::motion_blur},
+    {"chromatic_add", &Values::chromatic}, {"vignette_add", &Values::vignette}, {"ssao", &Values::ssao},
+    {"ssr", &Values::ssr},
+    {"game_sharpen", &Values::game_sharpen}, {"shadow_distance", &Values::shadow_distance}, {"lod", &Values::lod}};
+
+std::atomic<int>* EffectSetting(Values& v, const std::string& key) {
+    for (const auto& [name, member] : EffectKeys)
+        if (key == name) return &(v.*member);
+    return nullptr;
 }
 
 float Clamp(float v, float lo, float hi) {
@@ -109,6 +123,16 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.rcas = i != 0;
     } else if (key == "rcas_strength") {
         v.rcas_strength = TlgGraphics::ParseRcasStrength(value.empty() ? -1 : i);
+    } else if (key == "dlaa") {
+        v.dlaa = i != 0;
+    } else if (key == "level_select") {
+        v.level_select = i != 0;
+    } else if (key == "bridge_fix") {
+        v.bridge_fix = i != 0;
+    } else if (key == "shadow_scale") {
+        v.shadow_scale = i >= 4 ? 4 : i >= 2 ? 2 : 1;
+    } else if (std::atomic<int>* effect = EffectSetting(v, key)) {
+        *effect = std::clamp(i, 0, 400);
     } else if (key == "smaa") {
         v.smaa = i != 0;
     } else if (key == "cas") {
@@ -131,6 +155,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.render_resolution = TlgGraphics::ParseResolution(value);
     } else if (key == "engine_fps") {
         v.engine_fps = TlgGraphics::ParseEngineFps(i);
+    } else if (key == "hdr") {
+        v.hdr = i != 0;
     } else if (key == "deferred_readback") {
         v.deferred_readback = i != 0;
     } else if (key == "stale_readback") {
@@ -237,8 +263,10 @@ void Load() {
         {"TLG_MOUSE", "mouse_enabled"},              {"TLG_MOUSE_SENS", "mouse_sensitivity"},
         {"TLG_MOUSE_INVERT_Y", "mouse_invert_y"},    {"TLG_MOUSE_SMOOTHING", "mouse_smoothing"},
         {"TLG_MOUSE_ACCEL", "mouse_accel"},          {"TLG_MOUSE_DEADZONE", "mouse_deadzone"},
-        {"TLG_SMAA", "smaa"},
+        {"TLG_SMAA", "smaa"},                        {"TLG_DLAA", "dlaa"},
+        {"TLG_LEVEL_SELECT", "level_select"},        {"TLG_BRIDGE_FIX", "bridge_fix"},
         {"TLG_CAS", "cas"},                          {"TLG_COLOR_ADJUST", "color_adjust"},
+        {"TLG_HDR", "hdr"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -257,6 +285,7 @@ void Load() {
                                                  : v.engine_fps.load();
     v.startup_deferred_readback = v.deferred_readback;
     v.startup_stale_readback = v.stale_readback;
+    v.startup_hdr = v.hdr;
 }
 
 bool GraphicsNeedRestart() {
@@ -264,7 +293,7 @@ bool GraphicsNeedRestart() {
     return v.render_resolution != v.startup_render_resolution ||
            v.engine_fps != v.startup_engine_fps ||
            v.deferred_readback != v.startup_deferred_readback ||
-           v.stale_readback != v.startup_stale_readback;
+           v.stale_readback != v.startup_stale_readback || v.hdr != v.startup_hdr;
 }
 
 void ConfigureUpscalerSupport(bool fsr4, bool fsr411) {
@@ -300,6 +329,9 @@ bool FixedRenderSession() {
 }
 
 int RenderPreset() {
+    // The resolution patch (TLG_RESOLUTION_PATCH, run.py) renders natively: no reduced presets.
+    static const bool resolution_patch = std::getenv("TLG_RESOLUTION_PATCH") != nullptr;
+    if (resolution_patch) return NativeAA;
     const auto& v = Get();
     return FixedRenderSession() ? v.startup_preset :
         v.upscaler == UpscalerTaa ? NativeAA : v.preset.load();
@@ -356,13 +388,13 @@ void Save() {
     std::fprintf(file,
                  "display_mode=%s\nvsync=%d\nfps_limit=%d\nasync_shaders=%d\n"
                  "fsr1=%d\nrcas=%d\nrcas_strength=%d\nframes_queued=%d\n"
-                 "render_resolution=%s\nengine_fps=%d\ndeferred_readback=%d\nstale_readback=%d\n"
+                 "render_resolution=%s\nengine_fps=%d\nhdr=%d\ndeferred_readback=%d\nstale_readback=%d\n"
                  "restart_unconfirmed=%d\n",
                  TlgGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  int(v.vsync.load()), v.fps_limit.load(), int(v.async_shaders.load()),
                  int(v.fsr1.load()), int(v.rcas.load()), v.rcas_strength.load(), v.frames_queued.load(),
                  TlgGraphics::Resolutions[std::clamp(v.render_resolution.load(), 0, 5)].data(),
-                 v.engine_fps.load(), int(v.deferred_readback.load()), int(v.stale_readback.load()),
+                 v.engine_fps.load(), int(v.hdr.load()), int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
     std::fprintf(file,
                  "mouse_enabled=%d\nmouse_sensitivity=%.2f\nmouse_invert_y=%d\nmouse_smoothing=%.2f\n"
@@ -370,11 +402,15 @@ void Save() {
                  int(v.mouse_enabled.load()), v.mouse_sensitivity.load(), int(v.mouse_invert_y.load()),
                  v.mouse_smoothing.load(), v.mouse_accel.load(), v.mouse_deadzone.load(), v.key_map.c_str());
     std::fprintf(file,
-                 "smaa=%d\ncas=%d\ncas_strength=%d\ncolor_adjust=%d\ncolor_brightness=%.2f\n"
-                 "color_contrast=%.2f\ncolor_saturation=%.2f\ncolor_gamma=%.2f\n",
-                 int(v.smaa.load()), int(v.cas.load()), v.cas_strength.load(),
+                 "dlaa=%d\nshadow_scale=%d\nsmaa=%d\ncas=%d\ncas_strength=%d\ncolor_adjust=%d\n"
+                 "color_brightness=%.2f\ncolor_contrast=%.2f\ncolor_saturation=%.2f\ncolor_gamma=%.2f\n",
+                 int(v.dlaa.load()),v.shadow_scale.load(), int(v.smaa.load()), int(v.cas.load()), v.cas_strength.load(),
                  int(v.color_adjust.load()), v.brightness.load(), v.contrast.load(),
                  v.saturation.load(), v.color_gamma.load());
+    std::fprintf(file, "level_select=%d\nbridge_fix=%d\n", int(v.level_select.load()),
+                 int(v.bridge_fix.load()));
+    for (const auto& [name, member] : EffectKeys)
+        std::fprintf(file, "%s=%d\n", name, (v.*member).load());
     // Read by run.sh at start.
     std::fprintf(file, "live_resolution=%s\n", v.live_resolution < 0 ? "auto"
                                                   : v.live_resolution ? "1" : "0");

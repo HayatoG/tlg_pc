@@ -25,27 +25,35 @@ git submodule update --init --recursive
 bash build.sh                      # out/tlg-probe.exe, out/tlg-gpu-capabilities.exe
 TLG_GAME_DIR=F:/path/to/CUSA01623 python run.py
 python launcher/tlg_launcher_win.py
-bash packaging/windows/package.sh  # dist/tlg-windows/ and .zip: God of War III.exe + DLLs
+bash packaging/windows/package.sh  # dist/tlg-windows-x86_64.zip: The Last Guardian.exe + DLLs
 ```
 
 `run.py` is the Windows `run.sh` (same variables; works from a plain Windows Python too).
 The package freezes the launcher with PyInstaller (a private venv in `out/pyenv`, from a
-python.org Python) into `God of War III.exe`, which also runs `run.py` (`--run`), the preparation
-scripts (`--script`) and the game without the window (`--play`): players need no Python.
-`Play God of War III.exe` (`packaging/windows/play.c`) is a small native program that runs
-`God of War III.exe --play` from its folder and waits for it, for players who want to start the
+python.org Python) into `The Last Guardian.exe`, which also runs `run.py` (`--run`), the
+preparation scripts (`--script`) and the game without the window (`--play`): players need no Python.
+`Play The Last Guardian.exe` (`packaging/windows/play.c`) is a small native program that runs
+`The Last Guardian.exe --play` from its folder and waits for it, for players who want to start the
 game directly with the saved settings.
 `patches.py` applies the built-in patches only to the game build they were checked against
 (CUSA01623 01.02, by eboot.bin sha256; `TLG_FORCE_PATCHES=1` overrides); other builds run unpatched.
 From a source tree it adds `C:\msys64\clang64\bin` (or `$MSYS2_ROOT`) to `PATH` for the DLLs.
 `bash tools/fetch_fsr4_assets.sh` works in the CLANG64 shell as on Linux.
 
-DLSS (optional): `DLSS_SDK_ROOT=<checkout of github.com/NVIDIA/DLSS> bash
-packaging/windows/build_dlss.sh` builds `tlg_dlss.dll` (`gpu/dlss_bridge`, the only code that
-uses the NVIDIA SDK, compiled with MSVC 2022) and copies it with `nvngx_dlss.dll` next to
-`out/tlg-probe.exe`; `package.sh` ships both when present. The renderer loads the bridge at run
-time (`vk_dlss.cpp`), adds the Vulkan extensions NGX asks for, and DLSS gets the same inputs as
-FSR 3 (scene color, depth, render-pixel motion vectors, jitter). `TLG_DLSS=0` turns it off.
+DLAA (optional, NVIDIA RTX): `DLSS_SDK_ROOT=<checkout of github.com/NVIDIA/DLSS, tag v310.9.16>
+bash packaging/windows/build_dlss.sh` builds `tlg_dlss.dll` (`gpu/dlss_bridge`, the only code that
+uses the NVIDIA SDK, compiled with MSVC 2022 or 2026) and copies it with `nvngx_dlss.dll` and
+`NVIDIA-DLSS-LICENSE.txt` next to `out/tlg-probe.exe`; `package.sh` ships all three when present
+(`TLG_REQUIRE_DLSS=1` makes their absence an error, as in CI, which fetches the SDK itself). The
+renderer loads the bridge at run time (`vk_dlss.cpp`). DLSS runs at native resolution (DLAA) on
+the game's own motion vectors (sky pass), with a sub-pixel jitter on the scene draws, before the
+first post pass. Without the DLLs, or on a GPU without DLSS, the menu greys the DLAA setting out
+and the game keeps its own anti-aliasing. Settings: `dlaa` in `tlg.ini` (menu: Image ›
+Anti-aliasing; F8 toggles in game), `TLG_DLAA=0`, `TLG_DLSS=0`.
+
+The NVIDIA DLSS SDK is NVIDIA's proprietary software under its own license
+(`NVIDIA-DLSS-LICENSE.txt`), not under this repository's license; only the NVIDIA binaries ship,
+and the SDK sources are not part of this repository.
 
 The launcher texts are written in English with the Russian beside them; the other languages
 are in `launcher/tlg_lang.py` (one list per language in the order of `KEYS`; a missing or

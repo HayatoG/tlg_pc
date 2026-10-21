@@ -22,6 +22,8 @@ SETTING_ROWS = {
     's:native_audio': ('native_audio', 'switch', False),
     's:close_on_play': ('close_on_play', 'switch', False),
     's:reopen_launcher': ('reopen_launcher', 'switch', False),
+    's:level_select': ('level_select', 'switch', False),
+    's:bridge_fix': ('bridge_fix', 'switch', False),
     's:vram_budget_mb': ('vram_budget_mb', 'slider', False),
 }
 DISPLAY_MODES = ('Windowed', 'Borderless', 'Fullscreen')
@@ -30,16 +32,19 @@ COMBO_VALUES = {'display_mode': DISPLAY_MODES, 'gpu_readbacks': ('0', '1', '2'),
 COMBO_LABEL = {'display_mode': '', 'gpu_readbacks': 'readbacks_', 'frame_rate': 'fps_'}
 OVERLAY_IDS = tuple(i.id for i in backports_table.MENU if i.tab == 'Overlay')
 COLOR_IDS = tuple(i.id for i in backports_table.MENU if i.tab == 'Color')
+EFFECT_IDS = tuple(i.id for i in backports_table.MENU if i.tab == 'Effects')
 SECTIONS = (
     ('gfx_sec_image', ('s:display_mode', 's:vsync', 'menu:fsr1', 'menu:rcas', 'menu:rcas_strength',
-                       'menu:cas', 'menu:cas_strength', 'menu:smaa')),
+                       'menu:cas', 'menu:cas_strength', 'menu:smaa', 'menu:dlaa', 'menu:hdr')),
     ('gfx_sec_color', COLOR_IDS),
+    ('gfx_sec_effects', EFFECT_IDS),
     ('gfx_sec_rate', ('s:frame_rate', 'menu:fps_limit', 'menu:frames_queued')),
     ('gfx_sec_gpu', ('menu:async_shaders', 'TLG_BACKGROUND_WARMUP', 's:gpu_readbacks', 'TLG_READBACK_LINEAR',
                      'TLG_DIRECT_MEMORY_ACCESS')),
     ('gfx_sec_vram', ('s:vram_budget_mb',)),
     ('gfx_sec_overlay', ('s:show_fps',) + OVERLAY_IDS),
     ('gfx_sec_launcher', ('s:native_audio', 's:close_on_play', 's:reopen_launcher')),
+    ('gfx_sec_debug', ('s:level_select', 's:bridge_fix')),
 )
 # Sliders greyed out while the switch they belong to is off.
 NEEDS = {'menu:rcas_strength': 'menu:rcas', 'menu:cas_strength': 'menu:cas',
