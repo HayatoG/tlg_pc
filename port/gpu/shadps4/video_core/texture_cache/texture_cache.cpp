@@ -688,6 +688,17 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             return {merged_image_id, -1, -1};
         }
 
+        // tlg: a 3D image at the same address with more slices (a stage switch reuses the
+        // memory of a smaller volume). Depth is not part of resources, so replace it.
+        if (image_info.type == AmdGpu::ImageType::Color3D &&
+            cache_image.info.type == AmdGpu::ImageType::Color3D &&
+            image_info.size.depth > cache_image.info.size.depth) {
+            if (safe_to_delete) {
+                FreeImage(cache_image_id);
+            }
+            return {merged_image_id, -1, -1};
+        }
+
         // Enhanced debug logging for unreachable case
         // Calculate expected size based on format and dimensions
         u64 expected_size =

@@ -729,12 +729,12 @@ def raise_open_file_limit():
         pass
 
 
-def launch(settings, seconds=0, extra_env=None, detached=False):
+def launch(settings, seconds=0, extra_env=None, detached=False, header=()):
     """Writes the in-game settings, starts the game; returns (process, log path).
-    detached=False (Tk launcher, command line): the process's combined output is a text pipe; the
-    caller copies it to the log. detached=True (Qt launcher): the game writes straight into the log
-    file and runs in its own session, so closing the launcher never reaches it; follow the file with
-    logtail.LogTail and wait() for the exit code."""
+    The game always writes straight into the log file (after the header lines): a pipe that only
+    the launcher reads stalls the game once its buffer fills and the launcher is gone. Follow the
+    file with logtail.LogTail and wait() for the exit code. detached=True (Qt launcher): the game
+    also runs in its own session, so closing the launcher never reaches it."""
     data = user_dir()
     data.mkdir(parents=True, exist_ok=True)
     key_map = settings.get('key_map') or {}
@@ -761,15 +761,12 @@ def launch(settings, seconds=0, extra_env=None, detached=False):
     if ISA_TABLE.is_file():
         cmd += ['--isa-rewrite', str(ISA_TABLE)]
     raise_open_file_limit()
-    if detached:
-        with open(log, 'wb') as out:   # the child keeps its own copy of the descriptor
-            process = subprocess.Popen(cmd, cwd=str(data), env=build_env(settings, extra_env),
-                                       stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
-                                       **detach_options())
-        return process, log
-    process = subprocess.Popen(cmd, cwd=str(data), env=build_env(settings, extra_env),
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                               encoding='utf-8', errors='replace', bufsize=1)
+    with open(log, 'wb') as out:   # the child keeps its own copy of the descriptor
+        out.write(''.join(line + '\n' for line in header).encode('utf-8'))
+        out.flush()
+        process = subprocess.Popen(cmd, cwd=str(data), env=build_env(settings, extra_env),
+                                   stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                                   **(detach_options() if detached else {}))
     return process, log
 
 
@@ -796,17 +793,19 @@ def main(argv=None):
         return 1
     notes = []
     prepare(settings, log=lambda line: notes.append(line) if line.startswith('Frame rate') else None)
-    process, log = launch(settings, seconds)
+    process, log = launch(settings, seconds, header=notes)
     print(f'Rodando (log: {log})', flush=True)
-    with open(log, 'w', encoding='utf-8') as out:
-        for line in notes:
-            print(line, flush=True)
-            out.write(line + '\n')
-        for line in process.stdout:
-            sys.stdout.write(line)
-            out.write(line)
-            out.flush()
-    return process.wait()
+    tail = logtail.LogTail(log)
+    while True:   # echo only: the game never waits for this loop or the console
+        done = process.poll() is not None
+        try:
+            for line in tail.poll(final=done):
+                print(line, flush=True)
+        except (OSError, ValueError):
+            pass
+        if done:
+            return process.returncode
+        time.sleep(0.2)
 
 
 if __name__ == '__main__':

@@ -13,10 +13,12 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import logtail  # noqa: E402
 import tlg_run  # noqa: E402
 
 TEXT = {
@@ -671,17 +673,21 @@ class Launcher:
     def run_game(self):
         try:
             tlg_run.prepare(self.settings, log=lambda line: self.lines.put(line))
-            self.process, log = tlg_run.launch(self.settings)
+            header = [f'Frame rate: requested {tlg_run.frame_rate(self.settings)}, '
+                      f'applied {tlg_run.applied_frame_rate}']
+            self.process, log = tlg_run.launch(self.settings, header=header)
         except Exception as error:  # shown to the user, the launcher keeps running
             self.lines.put(('error', str(error)))
             return
         self.lines.put(f"{self.t('running')} {log}")
-        with open(log, 'w', encoding='utf-8') as out:
-            out.write(f'Frame rate: requested {tlg_run.frame_rate(self.settings)}, applied {tlg_run.applied_frame_rate}\n')
-            for line in self.process.stdout:
-                out.write(line)
-                out.flush()
-                self.lines.put(line.rstrip('\n'))
+        tail = logtail.LogTail(log)
+        while True:   # the game writes its own log file; this only follows it
+            done = self.process.poll() is not None
+            for line in tail.poll(final=done):
+                self.lines.put(line)
+            if done:
+                break
+            time.sleep(0.2)
         code = self.process.wait()
         self.process = None
         self.lines.put(('ended', code))

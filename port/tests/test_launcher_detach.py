@@ -318,9 +318,10 @@ class OptionTextTests(unittest.TestCase):
 
 
 class TkPathTests(unittest.TestCase):
-    """The classic Tk launcher and `--play` still read the game's output through a pipe."""
+    """The classic Tk launcher and `--play` stay attached, but the game writes its own log file:
+    a pipe stalls the game once nothing reads it (a closed or crashed launcher)."""
 
-    def test_default_launch_keeps_the_pipe(self):
+    def test_default_launch_writes_the_log_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             settings = dict(tlg_run.DEFAULT_SETTINGS, game_dir=str(root / 'game'))
@@ -330,9 +331,10 @@ class TkPathTests(unittest.TestCase):
                     mock.patch.object(tlg_run, 'probe_env', return_value={}), \
                     mock.patch.object(userdata, 'read_pointer', return_value={}), \
                     mock.patch.object(tlg_run.subprocess, 'Popen') as popen:
-                tlg_run.launch(settings)
-            self.assertEqual(tlg_run.subprocess.PIPE, popen.call_args.kwargs['stdout'])
+                _, log = tlg_run.launch(settings, header=['Frame rate: test'])
+            self.assertEqual(str(log), popen.call_args.kwargs['stdout'].name)
             self.assertNotIn('start_new_session', popen.call_args.kwargs)
+            self.assertEqual('Frame rate: test\n', log.read_text(encoding='utf-8'))
 
 
 class ReopenTests(unittest.TestCase):
