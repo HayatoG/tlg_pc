@@ -15,6 +15,7 @@ import preset_share  # noqa: E402  (launcher/preset_share.py; logic put the fold
 # (id, kind, live) of the options kept in settings.json. live: also in the Insert menu.
 SETTING_ROWS = {
     's:display_mode': ('display_mode', 'combo', True),
+    's:resolution': ('resolution', 'combo', False),
     's:vsync': ('vsync', 'switch', True),
     's:show_fps': ('show_fps', 'switch', True),
     's:frame_rate': ('frame_rate', 'combo', False),
@@ -26,12 +27,12 @@ SETTING_ROWS = {
 }
 DISPLAY_MODES = ('Windowed', 'Borderless', 'Fullscreen')
 COMBO_VALUES = {'display_mode': DISPLAY_MODES, 'gpu_readbacks': ('0', '1', '2'),
-                'frame_rate': tuple(tlg_run.FRAME_RATES)}
-COMBO_LABEL = {'display_mode': '', 'gpu_readbacks': 'readbacks_', 'frame_rate': 'fps_'}
+                'frame_rate': tuple(tlg_run.FRAME_RATES), 'resolution': tuple(tlg_run.RESOLUTIONS)}
+COMBO_LABEL = {'display_mode': '', 'gpu_readbacks': 'readbacks_', 'frame_rate': 'fps_'}  # resolution: tlg_run.resolution_label
 OVERLAY_IDS = tuple(i.id for i in backports_table.MENU if i.tab == 'Overlay')
 COLOR_IDS = tuple(i.id for i in backports_table.MENU if i.tab == 'Color')
 SECTIONS = (
-    ('gfx_sec_image', ('s:display_mode', 's:vsync', 'menu:fsr1', 'menu:rcas', 'menu:rcas_strength',
+    ('gfx_sec_image', ('s:display_mode', 's:resolution', 's:vsync', 'menu:fsr1', 'menu:rcas', 'menu:rcas_strength',
                        'menu:cas', 'menu:cas_strength', 'menu:smaa')),
     ('gfx_sec_color', COLOR_IDS),
     ('gfx_sec_rate', ('s:frame_rate', 'menu:fps_limit', 'menu:frames_queued')),
@@ -128,7 +129,8 @@ class Graphics(QObject):
                        value=int(value), valueText=f'{int(value)} MB')
         else:
             names = COMBO_VALUES[key]
-            options = [(n, self.t(COMBO_LABEL[key] + n)) for n in names]
+            options = [(n, tlg_run.resolution_label(n) if key == 'resolution' else self.t(COMBO_LABEL[key] + n))
+                       for n in names]
             options = [(n, label + (f' ({self.t("exp_default")})' if n == str(default) else ''))
                        for n, label in options]
             row['options'] = [{'value': n, 'label': label} for n, label in options]

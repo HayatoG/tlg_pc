@@ -165,10 +165,17 @@ DEFAULT_SETTINGS = {
     'stick_deadzone': 10,          # percent; runtime_pad.c TLG_STICK_DEADZONE
     'close_on_play': True,         # Qt launcher: close about 2 s after the game starts
     'reopen_launcher': True,       # ... and open again when the game exits
+    'resolution': '1920x1080',     # WxH (scripts/tlg_patches.py; TLG_RESOLUTION wins)
 }
 FRAME_RATES = ['30', '60', 'unlocked']
+# 16:9, then ultrawide 21:9 and super ultrawide 32:9 (Hor+ and a widened UI).
+RESOLUTIONS = ['1280x720', '1920x1080', '2560x1440', '3840x2160',
+               '2560x1080', '3440x1440', '3840x1600', '5120x2160',
+               '3840x1080', '5120x1440']
 # The frame rate mode prepare() really applied (another eboot build stays at 30).
 applied_frame_rate = '30'
+# MiB the Garlic heap patch added to the game's GPU heap (0: none); the direct memory grows with it.
+applied_garlic_extra = 0
 
 # Keyboard and mouse defaults of src/runtime_pad.c, in its key_map syntax ('|': several).
 DEFAULT_KEYS = {
@@ -411,6 +418,19 @@ def frame_rate(settings):
     return os.environ.get('TLG_FPS') or str(settings.get('frame_rate', '30'))
 
 
+def resolution(settings):
+    """The requested render and output size "WxH": TLG_RESOLUTION, else the launcher's setting."""
+    return os.environ.get('TLG_RESOLUTION') or str(settings.get('resolution', '1920x1080'))
+
+
+def resolution_label(size):
+    """'3440x1440 (21:9)': ultrawide sizes are 64:27 (2560x1080) or 43:18 (3440x1440), sold as 21:9."""
+    width, height = (int(n) for n in size.split('x'))
+    ratio = width / height
+    name = '32:9' if ratio > 3.4 else '21:9' if ratio > 2.2 else '16:9'
+    return f'{width} × {height} ({name})'
+
+
 def mods_dir():
     """TLG_MODS_DIR, else user_dir()/mods (created empty on first use so the player sees where
     to drop shadPS4/GoldHEN cheat XML files)."""
@@ -450,7 +470,8 @@ def set_mod_enabled(key, enabled):
 def prepare(settings, log=print):
     """Builds out/boot-linked.bin, out/content.bin and out/patches.bin (frame rate patches and
     any enabled mod); returns the module list that was linked."""
-    global applied_frame_rate
+    global applied_frame_rate, applied_garlic_extra
+    applied_garlic_extra = 0
     game = settings['game_dir']
     scripts = PORT_DIR / 'scripts'
     modules = ['libc.prx', 'libSceFios2.prx']
@@ -462,7 +483,7 @@ def prepare(settings, log=print):
         [*python_command(scripts / 'link_modules.py'), game, '--out', str(OUT_DIR), '--modules', *modules],
         [*python_command(scripts / 'content_profile.py'), game, '--out', str(OUT_DIR)],
         [*python_command(scripts / 'tlg_patches.py'), game, '--out', str(OUT_DIR), '--mode', frame_rate(settings),
-         '--mods-dir', str(mods_dir()), '--mods-config', str(mods_config())],
+         '--mods-dir', str(mods_dir()), '--mods-config', str(mods_config()), '--resolution', resolution(settings)],
     ]
     for step in steps:
         result = subprocess.run(step, cwd=str(scripts), capture_output=True, text=True,
@@ -474,6 +495,9 @@ def prepare(settings, log=print):
             log(line)
             if line.startswith('Frame rate: ') and line.endswith(' patch writes'):
                 applied_frame_rate = line.split()[2]
+            if line.startswith('Patch garlic: '):
+                words = line.split()  # '... GPU heap 2816 -> N MB (bytes)'
+                applied_garlic_extra = int(words[-3]) - int(words[-5])
     isa_table(log)
     return modules
 
@@ -596,6 +620,9 @@ def build_env(settings, extra=None):
     env['TLG_ENGINE_FPS'] = {'30': '30', '60': '60'}.get(applied_frame_rate, '240')
     if applied_frame_rate == 'unlocked':
         env.setdefault('TLG_VBLANK_HZ', '0')
+    # The larger Garlic heap comes out of direct memory (runtime_memory.c: 5056 MiB retail).
+    if applied_garlic_extra:
+        env.setdefault('TLG_DMEM_MB', str(5056 + applied_garlic_extra))
     restart = f'"{sys.executable}" --play' if FROZEN else f'"{sys.executable}" "{Path(__file__).resolve()}"'
     env.setdefault('TLG_RESTART_COMMAND', restart)
     # Linux package: the libraries built with the port (SDL3, FFmpeg, ...) are in out/lib, never the

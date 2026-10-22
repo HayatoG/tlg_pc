@@ -470,6 +470,7 @@
   "adv_profile_custom": {"en": "{n} changed", "pt": "{n} alterado(s)"},
   "gfx_sec_color": {"en": "Color", "pt": "Cor"},
   "gfx_sec_launcher": {"en": "Audio and launcher", "pt": "Áudio e launcher"},
+  "gfx_what_resolution": {"en": "Rendered natively; wider than 16:9 shows more of the scene and moves the HUD out to the edges.", "pt": "Renderizado nativamente; mais largo que 16:9 mostra mais da cena e leva o HUD às bordas."},
   "gfx_what_frame_rate": {"en": "The game's own frame rate: 30 as on PS4; 60 and unlocked patch the 1.03 eboot in memory (experimental, see docs/60fps.md).", "pt": "A taxa de quadros do próprio jogo: 30 como no PS4; 60 e livre alteram o eboot 1.03 na memória (experimental, ver docs/60fps.md)."},
   "gfx_what_native_audio": {"en": "Uses libSceNgs2.sprx from your console (system_lib/) when present; otherwise the port's own mixer plays the audio.", "pt": "Usa o libSceNgs2.sprx do seu console (system_lib/) quando ele existe; senão o mixer do próprio port toca o áudio."},
   "gpu_readbacks": {"en": "GPU accuracy", "pt": "Precisão da GPU"},

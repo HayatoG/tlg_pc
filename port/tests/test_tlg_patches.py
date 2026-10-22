@@ -91,3 +91,56 @@ class ModTitleIdTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def resolution_elf(expected=True):
+    """An ELF whose one PT_LOAD maps image offset 0 up to the mode table, with the bytes the
+    resolution patches expect (or other bytes) in place."""
+    size = t.RESOLUTION_ENTRY - t.GHIDRA_BASE + 0x100
+    image = bytearray(size)
+    for address, original in ((t.RESOLUTION_ENTRY, t.RESOLUTION_EXPECTED),
+                               (t.HOR_PLUS_CALL, t.HOR_PLUS_CALL_EXPECTED),
+                               (t.HOR_PLUS_BLOCK, t.HOR_PLUS_BLOCK_EXPECTED),
+                               (t.UI_SIZE, t.UI_SIZE_EXPECTED),
+                               (t.GUIDE_SCALE, t.GUIDE_SCALE_EXPECTED),
+                               (t.SUBTITLE_SCALE, t.SUBTITLE_SCALE_EXPECTED),
+                               (t.GARLIC_SIZE, t.GARLIC_SIZE_EXPECTED)):
+        offset = address - t.GHIDRA_BASE
+        image[offset:offset + len(original)] = original if expected else b'\xcc' * len(original)
+    return plain_elf(image)
+
+
+class ResolutionPatchTests(unittest.TestCase):
+    def test_parse(self):
+        self.assertEqual(t.parse_resolution('3840x1600'), (3840, 1600))
+        self.assertEqual(t.parse_resolution(' 3440 X 1440'), (3440, 1440))
+        for value in (None, '', '1920x1080', 'native', '0x1080', '70000x1080'):
+            self.assertIsNone(t.parse_resolution(value))
+
+    def test_16_9_changes_only_the_mode(self):
+        writes = t.resolution_writes(resolution_elf(), (2560, 1440))
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(writes[0][1][:8], struct.pack('<4H', 2560, 1440, 2560, 1440))
+
+    def test_gpu_heap(self):
+        (offset, data, _), = t.garlic_writes(resolution_elf())
+        self.assertEqual(offset, t.GARLIC_SIZE - t.GHIDRA_BASE)
+        self.assertEqual(data, bytes.fromhex('41bf') + struct.pack('<I', (2816 + t.GARLIC_EXTRA_MB) << 20))
+        with self.assertRaises(ValueError):
+            t.garlic_writes(resolution_elf(expected=False))
+
+    def test_ultrawide_gets_hor_plus_and_a_wider_ui(self):
+        writes = t.resolution_writes(resolution_elf(), (3840, 1600))
+        offsets = {offset: data for offset, data, _ in writes}
+        self.assertEqual(len(writes), 6)
+        self.assertEqual(offsets[t.UI_SIZE - t.GHIDRA_BASE], struct.pack('<4i', 2592, 1080, 2592, 1080))
+        self.assertEqual(offsets[t.GUIDE_SCALE - t.GHIDRA_BASE],
+                         struct.pack('<4f', 1 / 2592, 1 / 1080, -32, 16 / 2592))
+        self.assertEqual(offsets[t.SUBTITLE_SCALE - t.GHIDRA_BASE], struct.pack('<2f', 1 / 2592, 1 / 1080))
+        block = offsets[t.HOR_PLUS_BLOCK - t.GHIDRA_BASE]
+        self.assertEqual(len(block), len(t.HOR_PLUS_BLOCK_EXPECTED))
+        self.assertIn(struct.pack('<f', 1600 / 3840), block)
+
+    def test_other_bytes_are_refused(self):
+        with self.assertRaises(ValueError):
+            t.resolution_writes(resolution_elf(expected=False), (3440, 1440))
