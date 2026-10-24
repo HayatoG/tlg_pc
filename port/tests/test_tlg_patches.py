@@ -47,8 +47,8 @@ class FrameRatePatchTests(unittest.TestCase):
         # #40: a SELF dump of 1.03 has another sha256 than the plain dump, but the same code.
         applied, lines, blob = self.prepare(self_dump(text_with(t.MODES['60'])), '60')
         self.assertEqual(applied, '60')
-        self.assertIn('Frame rate: 60 FPS mode, 4 patch writes', lines)
-        self.assertEqual(struct.unpack_from('<8sQQ', blob), (b'G3PATCH2', 0, 4))
+        self.assertIn('Frame rate: 60 FPS mode, 5 patch writes', lines)
+        self.assertEqual(struct.unpack_from('<8sQQ', blob), (b'G3PATCH2', 0, 5))
 
     def test_self_dump_of_another_build_stays_at_30(self):
         applied, lines, blob = self.prepare(self_dump(text_with(t.MODES['unlocked'], expected=False)), 'unlocked')

@@ -67,6 +67,7 @@ some `0x4000`.
 |---|---|---|---|
 | `flip_rate_60` | `0x1c5151a` | `be01000000` → `be00000000` (`SetFlipRate(h,0)`) | 60, livre |
 | `dt_snap_60` | `0x24f17f8` / `0x24f17fc` / `0x24f1800` | 0,035 / 1/30 / 0,031667 → 0,0175 / 1/60 / 0,015833 | 60 |
+| `cloth_null_guard` | `0x128c161` | 67 B (guarda contra `[r12+0x28]==NULL` em `0x28c193` e `[rcx+rax*8]==NULL` em `0x28c197`) | 60, livre |
 | `max_fps_double` | `0x12091db` | `vmovss xmm1,[1.0]` → `[0.5]` (`0x24f17e8`) | nenhum (teste) |
 | `max_fps_off` | `0x12091e3` | `vdivss` → `vxorps xmm1,xmm1,xmm1` | nenhum (teste) |
 
