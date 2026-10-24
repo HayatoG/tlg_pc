@@ -6,8 +6,6 @@
 #pragma once
 #include "tlg_perf_stats.h"
 
-#include "../../src/cheat_hook.h"
-
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -48,18 +46,6 @@ struct Values {
     std::atomic<unsigned> overlay_items{TlgPerfStats::DefaultItems};
     std::atomic<int> overlay_scale{100}, overlay_corner{1}, overlay_opacity{50}, overlay_layout{0};
     std::atomic<int> menu_tab{0};
-    std::atomic<float> red_orb_multiplier{1.0f};
-    std::atomic<bool> red_orbs_supported{false};
-    /// Damage and orb pickup multipliers (src/damage_hook.h, src/orb_hook.h), 0.1x to 100x.
-    /// The game's code reads these floats directly.
-    std::atomic<float> damage_dealt{1.0f}, damage_taken{1.0f};
-    std::atomic<float> green_orb_multiplier{1.0f}, blue_orb_multiplier{1.0f}, gold_orb_multiplier{1.0f};
-    std::atomic<bool> damage_supported{false}, orb_pickup_supported{false};
-    std::atomic<bool> cheats[TLG_CHEAT_COUNT]{};
-    std::atomic<uint32_t> cheats_supported{0};
-    /// Damage hook (src/actor_hook.h): enemy health bar, off by default.
-    std::atomic<bool> enemy_health_bar{false};
-    std::atomic<bool> actor_watch_supported{false};
     // Graphics (tlg_graphics.h). Live: applied on the next frame.
     std::atomic<int> display_mode{0};
     std::atomic<bool> vsync{true};

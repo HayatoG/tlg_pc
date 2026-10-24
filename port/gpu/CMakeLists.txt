@@ -421,20 +421,10 @@ add_executable(upscaler-support-test EXCLUDE_FROM_ALL ../tests/test_upscaler_sup
     shim/tlg_settings.cpp)
 target_include_directories(upscaler-support-test PRIVATE shim)
 target_compile_options(upscaler-support-test PRIVATE -UNDEBUG)
-add_executable(orb-multiplier-test EXCLUDE_FROM_ALL ../tests/test_orb_multiplier.cpp
-    shim/tlg_orbs.cpp shim/tlg_settings.cpp)
-target_include_directories(orb-multiplier-test PRIVATE shim)
-target_compile_options(orb-multiplier-test PRIVATE -UNDEBUG)
-add_executable(stat-multipliers-test EXCLUDE_FROM_ALL ../tests/test_stat_multipliers.cpp
-    shim/tlg_settings.cpp)
-target_include_directories(stat-multipliers-test PRIVATE shim)
-target_compile_options(stat-multipliers-test PRIVATE -UNDEBUG)
 add_executable(perf-overlay-test EXCLUDE_FROM_ALL ../tests/test_perf_overlay.cpp
     shim/tlg_settings.cpp)
 target_include_directories(perf-overlay-test PRIVATE shim)
 target_compile_options(perf-overlay-test PRIVATE -UNDEBUG)
-add_executable(cheat-hooks-test EXCLUDE_FROM_ALL ../tests/test_cheat_hooks.cpp)
-target_compile_options(cheat-hooks-test PRIVATE -UNDEBUG)
 add_executable(wave64-ballot-test EXCLUDE_FROM_ALL ../tests/test_wave64_ballot.cpp ../tests/test_gpu_runtime_stubs.cpp)
 target_include_directories(wave64-ballot-test PRIVATE shim shadps4 third_party/gcn/include)
 target_compile_options(wave64-ballot-test PRIVATE -UNDEBUG -fPIC)
@@ -449,9 +439,6 @@ add_executable(graphics-settings-test EXCLUDE_FROM_ALL ../tests/test_graphics_se
     shim/tlg_settings.cpp)
 target_include_directories(graphics-settings-test PRIVATE shim)
 target_compile_options(graphics-settings-test PRIVATE -UNDEBUG)
-add_executable(actor-hook-test EXCLUDE_FROM_ALL ../tests/test_actor_hook.cpp)
-target_include_directories(actor-hook-test PRIVATE shim)
-target_compile_options(actor-hook-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 add_executable(readback-sources-test EXCLUDE_FROM_ALL ../tests/test_readback_sources.cpp)
 target_include_directories(readback-sources-test PRIVATE shadps4)
 target_compile_options(readback-sources-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
@@ -464,6 +451,3 @@ add_executable(fsr4-bench EXCLUDE_FROM_ALL tools/fsr4_bench.cpp
     shadps4/video_core/renderer_vulkan/fsr411/fsr411.cpp)
 target_include_directories(fsr4-bench PRIVATE shadps4/video_core/renderer_vulkan/fsr411)
 target_link_libraries(fsr4-bench PRIVATE ffx-vulkan::fsr4-v07-vulkan ffx-vulkan::fsr4-v07-assets Vulkan::Vulkan)
-
-add_executable(cheat-hook-test ../tests/test_cheat_hook.cpp)
-target_compile_options(cheat-hook-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)

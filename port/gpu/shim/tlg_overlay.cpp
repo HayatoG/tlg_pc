@@ -15,13 +15,8 @@
 
 #include <SDL3/SDL.h>
 #include "tlg_settings.h"
-#include "tlg_orbs.h"
-#include "tlg_actors.h"
 #include "tlg_graphics.h"
 #include "tlg_perf_stats.h"
-#include "../../src/actor_hook.h"
-
-extern TlgActorSlot tlg_actor_slots[2];
 extern "C" void runtime_restart(void); // src/probe.c: starts run.py again, ends this process
 #include "common/elf_info.h"
 #include "imgui.h"
@@ -244,27 +239,6 @@ void ChoiceRow(const char* label, std::atomic<int>& target, const char* const* l
                int count, const char* help = nullptr) {
     Row(label);
     Choice("##value", target, labels, values, count);
-    Help(help);
-    ImGui::PopID();
-}
-
-// A 0.1x to 100x multiplier with a 1x button.
-void MultiplierRow(const char* label, std::atomic<float>& value, const char* help) {
-    Row(label);
-    const ImGuiStyle& style = ImGui::GetStyle();
-    ImGui::SetNextItemWidth(-(ImGui::CalcTextSize("1x").x + style.FramePadding.x * 2 + style.ItemSpacing.x));
-    float v = value;
-    if (ImGui::SliderFloat("##value", &v, 0.1f, 100.0f, "%.2fx",
-                           ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
-        value = TlgOrbs::ClampMultiplier(v);
-        dirty = true;
-    }
-    Help(help);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("1x")) {
-        value = 1.0f;
-        dirty = true;
-    }
     Help(help);
     ImGui::PopID();
 }
@@ -676,55 +650,6 @@ void Menu() {
     ImGui::End();
     if (!keep_open) {
         SetOpen(false);
-    }
-}
-
-// Enemy health bar from the damage hook's records (tlg_actors.cpp).
-// Only the copied values are read, never the game's memory: an actor may be gone by now.
-void HealthDisplay() {
-    struct Seen {
-        uint32_t seq = 0;
-        std::chrono::steady_clock::time_point at{};
-    };
-    static Seen seen[2];
-    const auto& s = TlgSettings::Get();
-    if (!s.actor_watch_supported.load()) {
-        return;
-    }
-    const auto now = std::chrono::steady_clock::now();
-    TlgActorSlot slot[2];
-    for (int i = 0; i < 2; ++i) {
-        std::memcpy(&slot[i], const_cast<const TlgActorSlot*>(&tlg_actor_slots[i]), sizeof(slot[i]));
-        if (slot[i].seq != seen[i].seq) {
-            seen[i] = {slot[i].seq, now};
-        }
-    }
-    const auto recent = [&](int i, int seconds) {
-        return seen[i].seq != 0 && now - seen[i].at < std::chrono::seconds(seconds);
-    };
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImDrawList* draw = ImGui::GetForegroundDrawList();
-    const float scale = base_scale;
-    if (s.enemy_health_bar && recent(1, 4) && TlgActors::Valid(slot[1].health, slot[1].max_health)) {
-        // Minimal: a thin green bar centered on the screen's top edge; it shrinks toward the center
-        // so it stays symmetric, with the health in numbers below.
-        const ImVec2 display = ImGui::GetIO().DisplaySize;
-        const float width = 260.0f * scale, height = 5.0f * scale, center = display.x * 0.5f;
-        const float top = 36.0f * scale;
-        const float fraction = TlgActors::Fraction(slot[1].health, slot[1].max_health);
-        draw->AddRectFilled(ImVec2(center - width * 0.5f - scale, top - scale),
-                            ImVec2(center + width * 0.5f + scale, top + height + scale),
-                            IM_COL32(0, 0, 0, 140), 2 * scale);
-        const float half = width * 0.5f * fraction;
-        draw->AddRectFilled(ImVec2(center - half, top), ImVec2(center + half, top + height),
-                            IM_COL32(70, 190, 80, 220), 2 * scale);
-        char text[48];
-        std::snprintf(text, sizeof(text), "%.0f / %.0f", std::ceil(slot[1].health), slot[1].max_health);
-        const float font = ImGui::GetFontSize() * 0.9f;
-        const ImVec2 size = ImGui::GetFont()->CalcTextSizeA(font, FLT_MAX, 0.0f, text);
-        const ImVec2 at{center - size.x * 0.5f, top + height + 4.0f * scale};
-        draw->AddText(ImGui::GetFont(), font, ImVec2(at.x + scale, at.y + scale), IM_COL32(0, 0, 0, 160), text);
-        draw->AddText(ImGui::GetFont(), font, at, IM_COL32(225, 235, 220, 220), text);
     }
 }
 
@@ -1665,8 +1590,7 @@ bool Visible() {
     return initialized && (loading || background_total || menu_open || text_entry_active || choice_active ||
                            message_active || progress_on || now < progress_until || now < toast_until ||
                            NoticeActive() ||
-                           choice_retiring || s.show_fps ||
-                           (s.actor_watch_supported && s.enemy_health_bar));
+                           choice_retiring || s.show_fps);
 }
 
 bool CapturesInput() {
@@ -1812,9 +1736,6 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     }
     if (TlgSettings::Get().show_fps && !menu_open) {
         FpsCounter();
-    }
-    if (!loading && !menu_open) {
-        HealthDisplay();
     }
     if (background_total && !loading && !menu_open) {
         BackgroundLoading();

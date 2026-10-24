@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "tlg_settings.h"
-#include "tlg_orbs.h"
 #include "tlg_graphics.h"
 
 #include <algorithm>
@@ -54,14 +53,6 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     if (key == "menu_tab") {
         v.menu_tab = i >= 0 && i <= 3 ? i : 0;
         return;
-    }
-    const char* cheat_keys[] = {"cheat_health", "cheat_magic", "cheat_item", "cheat_rage", "cheat_orbs",
-                                "cheat_very_hard", "cheat_double_jumps"};
-    for (unsigned cheat = 0; cheat < TLG_CHEAT_COUNT; ++cheat) {
-        if (key == cheat_keys[cheat]) {
-            v.cheats[cheat] = i != 0;
-            return;
-        }
     }
     if (key == "key_map") {
         v.key_map = value;
@@ -137,20 +128,6 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.stale_readback = i != 0;
     } else if (key == "restart_unconfirmed") {
         v.restart_unconfirmed = i != 0;
-    } else if (key == "enemy_health_bar") {
-        v.enemy_health_bar = i != 0;
-    } else if (key == "red_orb_multiplier") {
-        v.red_orb_multiplier = TlgOrbs::ClampMultiplier(f);
-    } else if (key == "damage_dealt") {
-        v.damage_dealt = TlgOrbs::ClampMultiplier(f);
-    } else if (key == "damage_taken") {
-        v.damage_taken = TlgOrbs::ClampMultiplier(f);
-    } else if (key == "green_orb_multiplier") {
-        v.green_orb_multiplier = TlgOrbs::ClampMultiplier(f);
-    } else if (key == "blue_orb_multiplier") {
-        v.blue_orb_multiplier = TlgOrbs::ClampMultiplier(f);
-    } else if (key == "gold_orb_multiplier") {
-        v.gold_orb_multiplier = TlgOrbs::ClampMultiplier(f);
     } else if (key == "fsr4_auto_exposure") {
         v.fsr4_auto_exposure = i != 0;
     } else if (key == "fsr4_invert_jitter") {
@@ -333,18 +310,6 @@ void Save() {
                  v.debug_view.load(), int(v.show_fps.load()),
                  int(v.fsr4_auto_exposure.load()), int(v.fsr4_invert_jitter.load()));
     std::fprintf(file, "output_res=%dx%d\n", OutputWidths[v.output_res], OutputHeights[v.output_res]);
-    std::fprintf(file, "red_orb_multiplier=%.3f\n", v.red_orb_multiplier.load());
-    std::fprintf(file, "damage_dealt=%.3f\n", v.damage_dealt.load());
-    std::fprintf(file, "damage_taken=%.3f\n", v.damage_taken.load());
-    std::fprintf(file, "green_orb_multiplier=%.3f\n", v.green_orb_multiplier.load());
-    std::fprintf(file, "blue_orb_multiplier=%.3f\n", v.blue_orb_multiplier.load());
-    std::fprintf(file, "gold_orb_multiplier=%.3f\n", v.gold_orb_multiplier.load());
-    std::fprintf(file, "cheat_health=%d\ncheat_magic=%d\ncheat_item=%d\ncheat_rage=%d\ncheat_orbs=%d\n"
-                       "cheat_very_hard=%d\ncheat_double_jumps=%d\n",
-                 int(v.cheats[0].load()), int(v.cheats[1].load()), int(v.cheats[2].load()),
-                 int(v.cheats[3].load()), int(v.cheats[4].load()),
-                 int(v.cheats[5].load()), int(v.cheats[6].load()));
-    std::fprintf(file, "enemy_health_bar=%d\n", int(v.enemy_health_bar.load()));
     std::fprintf(file,
                  "overlay_fps=%d\noverlay_frametime=%d\noverlay_upscaler=%d\noverlay_gpu=%d\n"
                  "overlay_cpu=%d\noverlay_ram=%d\noverlay_vram=%d\noverlay_scale=%d\noverlay_corner=%d\n"
