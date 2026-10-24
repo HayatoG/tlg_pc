@@ -1,0 +1,61 @@
+From: tlg
+Subject: [PATCH] FSR 3 portable API: ffxVkPortableUpscaleContextSetVelocityFactor
+
+---
+--- a/include/ffx_vk_portable.h
++++ b/include/ffx_vk_portable.h
+@@ -323,6 +323,14 @@
+     const FfxVkPortableUpscaleDispatchInfo* dispatchInfo);
+ 
+ /*
++ * Set FSR 3's fVelocityFactor (0..1, default 1): how much motion reduces the
++ * history weight.  Applies from the next dispatch.
++ */
++FfxVkPortableResult ffxVkPortableUpscaleContextSetVelocityFactor(
++    FfxVkPortableUpscaleContext* context,
++    float velocityFactor);
++
++/*
+  * Destroy a context.  NULL is accepted.  The application must first ensure
+  * that no submitted command buffer can still reference this context's
+  * resources (normally by waiting for the relevant frame fences).
+--- a/src/ffx_vk_fsr3_portable.cpp
++++ b/src/ffx_vk_fsr3_portable.cpp
+@@ -616,6 +616,18 @@
+     return fromFfxResult(ffxResult);
+ }
+ 
++extern "C" FfxVkPortableResult ffxVkPortableUpscaleContextSetVelocityFactor(
++    FfxVkPortableUpscaleContext* context,
++    float velocityFactor)
++{
++    if (context == nullptr || context->magic != kContextMagic)
++        return FFX_VK_PORTABLE_ERROR_INVALID_ARGUMENT;
++    std::lock_guard<std::mutex> lock(context->mutex);
++    return fromFfxResult(ffxFsr3UpscalerSetConstant(
++        &context->ffxContext, FFX_FSR3UPSCALER_CONFIGURE_UPSCALE_KEY_FVELOCITYFACTOR,
++        &velocityFactor));
++}
++
+ extern "C" FfxVkPortableResult ffxVkPortableUpscaleContextDestroy(
+     FfxVkPortableUpscaleContext* context)
+ {
+--- a/src/ffx_vk_portable.c
++++ b/src/ffx_vk_portable.c
+@@ -492,6 +492,16 @@
+     return FFX_VK_PORTABLE_ERROR_UNSUPPORTED;
+ }
+ 
++FfxVkPortableResult ffxVkPortableUpscaleContextSetVelocityFactor(
++    FfxVkPortableUpscaleContext* context,
++    float velocityFactor)
++{
++    (void)velocityFactor;
++    return context == NULL
++        ? FFX_VK_PORTABLE_ERROR_INVALID_POINTER
++        : FFX_VK_PORTABLE_ERROR_UNSUPPORTED;
++}
++
+ FfxVkPortableResult ffxVkPortableUpscaleContextDestroy(
+     FfxVkPortableUpscaleContext* context)
+ {

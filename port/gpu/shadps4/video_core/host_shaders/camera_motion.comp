@@ -24,7 +24,8 @@ layout(push_constant) uniform Constants {
     vec2 size;         // pixels
     vec2 jitter;       // current viewport shift in render pixels (x right, y down)
     vec2 previous_jitter;
-    uint mode;         // motion: 1 = object motion vectors available; debug: 0 motion, 1 raw
+    uint mode;         // motion: 1 = object motion vectors available, 2 = game motion, 3 = game
+                       // motion with the hair fix; debug: 0 motion, 1 raw
                        // depth, 2 view z / 50, 3 reprojected previous frame, 4 |difference|
 };
 
@@ -84,7 +85,34 @@ void main() {
     imageStore(color_img, pixel, vec4(mix(current.rgb, mv_color, 0.75), current.a));
 #else
     vec2 result = motion;
-    if (mode == 1) {
+    if (mode >= 2) {
+        // tlg: the game's own motion target (UV units, current - previous, unjittered).
+        const vec2 game = texelFetch(object_tex, pixel, 0).rg;
+        result = any(isnan(game)) || any(isinf(game)) ? vec2(0.0) : -game * size;
+        // Mode 3: the hair does not write the motion target, so it keeps the vector of the
+        // surface behind it. A static point on this pixel's ray moves along the segment from
+        // `motion` (this depth) to the motion at infinite depth; a vector inside that segment
+        // belongs to something farther away. Use the camera motion at this depth instead.
+        if (mode == 3 && !sky) {
+            const vec3 far_view = vec3(dot(reproject[0].xyz, view.xyz),
+                                       dot(reproject[1].xyz, view.xyz),
+                                       dot(reproject[2].xyz, view.xyz));
+            const vec2 far_ndc = vec2(far_view.x * prev_proj.x, far_view.y * prev_proj.y) /
+                                 max(far_view.z, 1e-4);
+            const vec2 far_motion =
+                (vec2(far_ndc.x * 0.5 + 0.5, 0.5 - far_ndc.y * 0.5) - scene_uv) * size;
+            const vec2 axis = far_motion - motion;
+            const float length2 = dot(axis, axis);
+            if (length2 > 4.0) {
+                const vec2 offset = result - motion;
+                const float t = dot(offset, axis) / length2;
+                const float miss = length(offset - t * axis);
+                if (t > 0.1 && t < 0.95 && miss < max(1.0, 0.05 * sqrt(length2))) {
+                    result = motion;
+                }
+            }
+        }
+    } else if (mode == 1) {
         const vec4 object_motion = texelFetch(object_tex, pixel, 0);
         // A later ordinary draw may have covered this pixel without touching the motion
         // target. Its final depth then differs from the depth stored with the vector.

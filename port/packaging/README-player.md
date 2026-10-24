@@ -48,6 +48,7 @@ No Linux, `./install_desktop.sh` adiciona o jogo ao menu de aplicativos.
 
 - **F10**: liga e desliga o contador de FPS
 - **Insert** (ou R3 + L2 no controle): abre o menu do port (imagem, desempenho, overlay)
+- **F8**: alterna entre o DLAA e o anti-aliasing do próprio jogo (Windows, NVIDIA RTX). O DLAA (NVIDIA DLSS na resolução nativa) deixa a folhagem e as bordas finas estáveis; vem ligado e pode ser desligado no launcher ou em Imagem › Anti-aliasing no menu do port. Em outras placas a opção fica desativada.
 - Controles de PS4/PS5, Xbox e 8BitDo funcionam via SDL3, por USB ou Bluetooth.
 
 ### Teclado e mouse
@@ -126,6 +127,7 @@ On Linux, `./install_desktop.sh` adds the game to the applications menu.
 
 - **F10**: toggles the FPS counter
 - **Insert** (or R3 + L2 on a controller): opens the port's menu (image, performance, overlay)
+- **F8**: switches between DLAA and the game's own anti-aliasing (Windows, NVIDIA RTX). DLAA (NVIDIA DLSS at native resolution) keeps foliage and thin edges stable; it is on by default and can be turned off in the launcher or under Image › Anti-aliasing in the port's menu. On other graphics cards the setting is greyed out.
 - PS4/PS5, Xbox and 8BitDo controllers work through SDL3, over USB or Bluetooth.
 
 ### Keyboard and mouse
@@ -165,3 +167,5 @@ While the game window has focus, it takes the mouse and the mouse turns the came
 ---
 
 This project is not affiliated with Sony Interactive Entertainment, SIE Japan Studio or genDESIGN. The Last Guardian is a trademark of Sony Interactive Entertainment. / Este projeto não tem vínculo com a Sony Interactive Entertainment, SIE Japan Studio ou genDESIGN.
+
+The Windows package contains NVIDIA DLSS (`out/nvngx_dlss.dll`) under NVIDIA's license (`out/NVIDIA-DLSS-LICENSE.txt`). NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation. / O pacote Windows contém o NVIDIA DLSS (`out/nvngx_dlss.dll`) sob a licença da NVIDIA (`out/NVIDIA-DLSS-LICENSE.txt`). NVIDIA, RTX e DLSS são marcas da NVIDIA Corporation.

@@ -10,3 +10,5 @@ patches here to its working tree when they are not applied yet:
 - `0003-...`: the rest of the standard includes the FFX 1.1.4 SDK relies on being pulled in
   transitively by libstdc++ but not by libc++ / MinGW: `<cstdlib>` for `_countof`, `<wchar.h>`
   for `swprintf_s`, `<cmath>` for `log2` and `<new>` for placement new.
+- `0004-...`: `ffxVkPortableUpscaleContextSetVelocityFactor`, FSR 3's `fVelocityFactor` (how much
+  motion cuts the history) in the portable API, for the `fsr_velocity` setting.

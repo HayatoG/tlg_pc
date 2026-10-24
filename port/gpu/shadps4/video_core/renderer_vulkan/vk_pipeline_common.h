@@ -53,6 +53,12 @@ public:
         return *stages[u32(stage)];
     }
 
+    /// tlg: the fragment shader's hash, 0 for depth-only pipelines.
+    u64 FragmentHash() const noexcept {
+        const auto* fs = stages[u32(Shader::SwStage::Fragment)];
+        return fs ? fs->pgm_hash : 0;
+    }
+
     bool IsCompute() const {
         return is_compute;
     }

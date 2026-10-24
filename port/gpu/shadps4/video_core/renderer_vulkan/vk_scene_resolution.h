@@ -26,6 +26,13 @@ public:
     bool SetSize(SceneResolution::Size);
     SceneResolution::Size Size() const { return size; }
     bool Reduced() const { return size != SceneResolution::Size{}; }
+    /// tlg: shadow maps (2048x2048 depth) get proxies `scale` times their size: the shadow
+    /// passes draw into them and shaders sample them (Settings shadow_scale; 1 = native).
+    bool SetShadowScale(u32 scale);
+    /// The upscale factor of `image` (0 when it is no upscaled shadow map).
+    u32 Upscale(const VideoCore::Image&) const;
+    bool ShadowsUpscaled() const { return shadow_scale > 1; }
+    void ShadowReport(); ///< once per frame: prints proxy use every 120 frames
     /// A reduced proxy can stand in for the image: a 1920x1080 scene target or, scaled by
     /// the same factor, a half-resolution (960x540) one (toggle SceneHalfRes).
     bool Eligible(const VideoCore::Image&) const;
@@ -97,6 +104,10 @@ private:
     Runtime& runtime;
     Lookup lookup;
     SceneResolution::Size size;
+    u32 shadow_scale = 1;
+    u32 shadow_frames = 0, shadow_passes = 0, shadow_samples = 0, shadow_fills = 0,
+        shadow_resolves = 0;
+    void Reset();
     std::unordered_map<u64, std::unique_ptr<Entry>> entries; ///< by Key(uid, level)
     std::unordered_set<u64> tracked; ///< uids with proxies
     bool copying = false;

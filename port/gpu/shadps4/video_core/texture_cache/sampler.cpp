@@ -11,12 +11,22 @@ namespace VideoCore {
 Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sampler,
                  const AmdGpu::BorderColorBuffer border_color_base, const bool is_depth, float extra_lod_bias) {
     using namespace Vulkan;
-    const bool anisotropy_enable = instance.IsAnisotropicFilteringSupported() &&
-                                   (AmdGpu::IsAnisoFilter(sampler.xy_mag_filter) ||
-                                    AmdGpu::IsAnisoFilter(sampler.xy_min_filter));
+    // tlg: 16x anisotropic filtering on mipmapped, linearly filtered textures; depth compares,
+    // point lookups and single-level targets keep the guest's filter.
+    constexpr float forced_aniso = 16.0f;
+    const bool force_aniso = !is_depth &&
+                             sampler.xy_min_filter != AmdGpu::Filter::Point &&
+                             sampler.xy_min_filter != AmdGpu::Filter::AnisoPoint &&
+                             sampler.mip_filter != AmdGpu::MipFilter::None && sampler.MaxLod() > 0.0f;
+    const bool anisotropy_enable = instance.IsAnisotropicFilteringSupported() && (force_aniso ||
+                                   AmdGpu::IsAnisoFilter(sampler.xy_mag_filter) ||
+                                   AmdGpu::IsAnisoFilter(sampler.xy_min_filter));
     const float max_anisotropy =
-        anisotropy_enable ? std::clamp(sampler.MaxAniso(), 1.0f, instance.MaxSamplerAnisotropy())
-                          : 1.0f;
+        anisotropy_enable
+            ? std::clamp(force_aniso ? std::max(sampler.MaxAniso(), forced_aniso)
+                                     : sampler.MaxAniso(),
+                         1.0f, instance.MaxSamplerAnisotropy())
+            : 1.0f;
     auto border_color = LiverpoolToVK::BorderColor(sampler.border_color_type);
     if (border_color == vk::BorderColor::eFloatCustomEXT &&
         !instance.IsCustomBorderColorSupported()) {

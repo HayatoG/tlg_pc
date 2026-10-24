@@ -30,10 +30,12 @@ COMBO_VALUES = {'display_mode': DISPLAY_MODES, 'gpu_readbacks': ('0', '1', '2'),
 COMBO_LABEL = {'display_mode': '', 'gpu_readbacks': 'readbacks_', 'frame_rate': 'fps_'}
 OVERLAY_IDS = tuple(i.id for i in backports_table.MENU if i.tab == 'Overlay')
 COLOR_IDS = tuple(i.id for i in backports_table.MENU if i.tab == 'Color')
+EFFECT_IDS = tuple(i.id for i in backports_table.MENU if i.tab == 'Effects')
 SECTIONS = (
     ('gfx_sec_image', ('s:display_mode', 's:vsync', 'menu:fsr1', 'menu:rcas', 'menu:rcas_strength',
-                       'menu:cas', 'menu:cas_strength', 'menu:smaa')),
+                       'menu:cas', 'menu:cas_strength', 'menu:smaa', 'menu:dlaa', 'menu:hdr')),
     ('gfx_sec_color', COLOR_IDS),
+    ('gfx_sec_effects', EFFECT_IDS),
     ('gfx_sec_rate', ('s:frame_rate', 'menu:fps_limit', 'menu:frames_queued')),
     ('gfx_sec_gpu', ('menu:async_shaders', 'TLG_BACKGROUND_WARMUP', 's:gpu_readbacks', 'TLG_READBACK_LINEAR',
                      'TLG_DIRECT_MEMORY_ACCESS')),
