@@ -628,6 +628,44 @@ static void install_actor_watch(const char *app0, Segment *segments, uint64_t co
     printf("Health display: damage hook ready (enemy health bar in the menu)\n");
 }
 
+/* HavokScript loadbuffer (0xe7e430, CUSA03745 v01.00): its three callers (file dofile,
+ * loadstring, one more) go through the shim, which may log a chunk, append to it or swap it
+ * for generated code (gpu/shim/tlg_lua.cpp). */
+extern ABI int tlg_lua_load(void *L, void *options, const char *buffer, uint64_t size,
+                            const char *name);
+extern void tlg_lua_status(uintptr_t original);
+static void install_lua_hook(Segment *segments, uint64_t count) {
+    static const uint64_t calls[] = {0xd4fe8e, 0xe7e37f, 0xec24bc};
+    const uint64_t target = 0xe7e430;
+    for (unsigned i = 0; i < 3; ++i) {
+        int32_t relative;
+        if (!mapped(segments, count, calls[i], 5) || image[calls[i]] != 0xe8) goto mismatch;
+        memcpy(&relative, image + calls[i] + 1, 4);
+        if (calls[i] + 5 + (int64_t)relative != target) goto mismatch;
+    }
+    unsigned char *stub = allocate(page_size);
+    static const unsigned char jump[] = {0x48,0xb8, 0,0,0,0,0,0,0,0, 0xff,0xe0}; /* movabs rax; jmp rax */
+    memcpy(stub, jump, sizeof(jump));
+    const uintptr_t helper = (uintptr_t)tlg_lua_load;
+    memcpy(stub + 2, &helper, 8);
+    int32_t displacements[3];
+    for (unsigned i = 0; i < 3; ++i) {
+        const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + calls[i] + 5);
+        if (delta < INT32_MIN || delta > INT32_MAX) {
+            printf("Lua hook: unavailable (outside relative-call range)\n");
+            return;
+        }
+        displacements[i] = (int32_t)delta;
+    }
+    protect(stub, page_size, 5);
+    tlg_lua_status((uintptr_t)(image + target));
+    for (unsigned i = 0; i < 3; ++i) memcpy(image + calls[i] + 1, &displacements[i], 4);
+    printf("Lua hook: ready (3 loadbuffer calls)\n");
+    return;
+mismatch:
+    printf("Lua hook: unavailable (code signature mismatch)\n");
+}
+
 static void install_orb_multiplier(const char *app0, Segment *segments, uint64_t count,
                                    uint64_t size) {
     char path[4096], serial[32] = "", version[32] = "";
@@ -1130,6 +1168,7 @@ int main(int argc, char **argv) {
     if (gpu_enabled) install_cheats(app0, segments, ns, size);
     if (gpu_enabled) install_actor_watch(app0, segments, ns, size);
     if (gpu_enabled) install_stat_multipliers(app0, segments, ns, size);
+    if (gpu_enabled) install_lua_hook(segments, ns);
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif

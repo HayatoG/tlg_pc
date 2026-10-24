@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdio>
 #include "common/assert.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
@@ -369,6 +370,9 @@ s32 PS4_SYSV_ABI sceVideoOutGetDeviceCapabilityInfo(
             pDeviceCapabilityInfo->capability |= ORBIS_VIDEO_OUT_DEVICE_CAPABILITY_BT2020_PQ;
         }
     }
+    std::printf("VideoOut: HDR capability %llu (display %d, game param.sfo %d)\n",
+                (unsigned long long)pDeviceCapabilityInfo->capability, int(presenter->IsHDRSupported()),
+                int(Common::ElfInfo::Instance().GetPSFAttributes().support_hdr));
     return ORBIS_OK;
 }
 
@@ -436,6 +440,7 @@ s32 PS4_SYSV_ABI sceVideoOutConfigureOutputMode_(s32 handle, u32 reserved, const
         return ORBIS_VIDEO_OUT_ERROR_INVALID_VALUE;
     }
 
+    std::printf("VideoOut: output mode colorimetry %d\n", int(mode->colorimetry));
     switch (mode->colorimetry) {
     case OrbisVideoOutColorimetry::Any:
         port->is_hdr = false;

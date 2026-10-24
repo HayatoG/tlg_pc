@@ -4,9 +4,14 @@
 #ifndef _WIN32
 #include <dlfcn.h>
 #endif
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
 #include <unordered_set>
 #include <xxhash.h>
 #include "video_core/renderer_vulkan/ui_composition.h"
+#include "tlg_settings.h"
 #include "tlg_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
@@ -221,6 +226,110 @@ VideoCore::ImageId Rasterizer::FindTargetMemoized(VideoCore::TextureCache::Image
         last.generation = ~0ULL;
     }
     return image_id;
+}
+
+// tlg debug: TLG_JITTER_CONTROL=<file> bisects which scene draws break under jitter while the
+// game runs. "lo hi" pairs: only the jitter-eligible draws in those ranges (counted from the sky
+// pass) are shifted; "only <ps hex>": only draws of these pixel shaders; "not <ps hex>": these are
+// never shifted; "skip <ps hex>": draws of that pixel shader are dropped; "map": print the
+// eligible draws of one frame (index, pixel shader). Re-read twice a second.
+namespace {
+struct JitterControl {
+    std::vector<std::pair<u32, u32>> ranges;
+    std::vector<u32> skip, only, never;
+    bool map = false;
+    u32 index = 0; ///< jitter-eligible draws since the sky pass
+} jitter_control;
+
+/// Meshes (index address, count) drawn jittered into a scene depth since the sky pass.
+std::vector<std::pair<VAddr, u32>> jittered_meshes;
+
+bool Listed(const std::vector<u32>& list, u32 ps) {
+    return std::find(list.begin(), list.end(), ps) != list.end();
+}
+
+void ReadJitterControl() {
+    auto& control = jitter_control;
+    const u32 count = control.index;
+    control.index = 0;
+    jittered_meshes.clear(); // a new frame
+    control.map = false;
+    static const char* path = std::getenv("TLG_JITTER_CONTROL");
+    static auto last = std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    if (!path || now - last < std::chrono::milliseconds(500)) return;
+    last = now;
+    FILE* file = std::fopen(path, "r");
+    if (!file) return;
+    JitterControl next;
+    char token[32];
+    u32 lo = ~0u;
+    while (std::fscanf(file, "%31s", token) == 1) {
+        u32 hash;
+        auto* list = !std::strcmp(token, "skip") ? &next.skip
+                     : !std::strcmp(token, "only") ? &next.only
+                     : !std::strcmp(token, "not")  ? &next.never
+                                                    : nullptr;
+        if (list) {
+            if (std::fscanf(file, "%x", &hash) == 1) list->push_back(hash);
+        } else if (!std::strcmp(token, "map")) {
+            next.map = true;
+        } else if (lo == ~0u) {
+            lo = u32(std::strtoul(token, nullptr, 10));
+        } else {
+            next.ranges.emplace_back(lo, u32(std::strtoul(token, nullptr, 10)));
+            lo = ~0u;
+        }
+    }
+    std::fclose(file);
+    std::printf("Jitter control: %zu ranges, %zu only, %zu not, %zu skipped (%u eligible)\n",
+                next.ranges.size(), next.only.size(), next.never.size(), next.skip.size(), count);
+    std::fflush(stdout);
+    // A one-shot map: remove the token from the file to avoid a map every half second.
+    next.index = 0;
+    control = std::move(next);
+}
+
+/// Called once per jitter-eligible draw: whether this one is shifted.
+bool JitterInRange(u32 ps) {
+    const auto& control = jitter_control;
+    const u32 index = jitter_control.index++;
+    if (control.map) {
+        std::printf("Jitter map: %u ps %08x\n", index, ps);
+    }
+    if (Listed(control.never, ps) || (!control.only.empty() && !Listed(control.only, ps))) {
+        return false;
+    }
+    if (control.ranges.empty()) return true;
+    for (const auto& [lo, hi] : control.ranges) {
+        if (index >= lo && index < hi) return true;
+    }
+    return false;
+}
+
+bool SkippedShader(u32 ps) {
+    return Listed(jitter_control.skip, ps);
+}
+} // namespace
+
+/// tlg: whether the draw samples a scene depth: the bound images hold its depth attachment
+/// once, and a sampled depth of the scene size again.
+bool Rasterizer::SamplesSceneDepth() {
+    u32 depths = 0;
+    for (const auto image_id : bound_images) {
+        const auto& info = texture_cache.GetImage(image_id).info;
+        depths += info.props.is_depth &&
+                  std::array{info.size.width, info.size.height} == upscaler->GameSize();
+    }
+    return depths > 1;
+}
+
+bool Rasterizer::JitterDepth(VideoCore::ImageId depth) {
+    if (!upscaler->GameMotion()) return depth == camera_motion->Depth();
+    // Game motion: both ping-pong scene depths (the prepass and G-buffer of a frame use the
+    // same one, of the sky pass's size), not the half-resolution transparents or shadow maps.
+    const auto& size = texture_cache.GetImage(depth).info.size;
+    return std::array{size.width, size.height} == upscaler->GameSize();
 }
 
 void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
@@ -1012,12 +1121,19 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         static const char* scene_debug = std::getenv("TLG_SCENE_DEBUG");
         scene_debug_frame = scene_debug && std::remove(scene_debug) == 0;
         scene_targets->debug = scene_debug_frame;
+        scene_targets->SetShadowScale(u32(std::clamp(TlgSettings::Get().shadow_scale.load(), 1, 4)));
+        scene_targets->ShadowReport();
     }
     bind_prepared = used_prepared;
     motion_draw = pipeline->GetGraphicsKey().motion_vectors;
     motion_geometry = 0;
 
     PrepareRenderState(pipeline);
+    if (upscaler->Enabled() &&
+        pipeline->FragmentHash() == upscaler->SkyMotionPs()) {
+        upscaler->OnGameMotionPass(cb_descs[0].first, cb_descs[2].first, db_desc.first);
+        ReadJitterControl();
+    }
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];
         upscaler->OnDraw(pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
@@ -1143,9 +1259,45 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     // tlg: jitter geometry drawn with the scene depth, not full-screen passes (a shifted
     // full-screen quad leaves an edge column unwritten).
     draw_jitter = {};
-    if (upscaler->Enabled() && db_desc.first && db_desc.first == camera_motion->Depth() &&
-        (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1)) {
+    // Not volumes that sample a scene depth (decals, lights): they rebuild positions per pixel
+    // from the already jittered depth, and a shifted box misplaces what they write into the
+    // G-buffer (blocks on the boy's face, ps da3456ba, 2026-10-21).
+    if (upscaler->Enabled() && db_desc.first && JitterDepth(db_desc.first) &&
+        (regs.num_indices > 6 || regs.num_instances.NumInstances() > 1) &&
+        (!TlgToggle::Disabled(TlgToggle::JitterDepthWritesOnly) ||
+         regs.depth_control.depth_write_enable) &&
+        !SamplesSceneDepth() && JitterInRange(pipeline->FragmentHash())) {
         draw_jitter = upscaler->Jitter();
+    }
+    // A redraw of a mesh already drawn jittered into this depth takes the same shift, sampling
+    // or not: water shading (ps 05adfd4d, 4755277d) tests LessEqual against its own depth
+    // pre-pass (ps 26c53528) and flickered where the two disagreed (2026-10-21).
+    if (upscaler->Enabled() && is_indexed && db_desc.first && JitterDepth(db_desc.first)) {
+        const std::pair mesh{regs.index_base_address.Address<VAddr>() +
+                                 u64(index_offset) * 4, regs.num_indices};
+        const bool known = std::find(jittered_meshes.begin(), jittered_meshes.end(), mesh) !=
+                           jittered_meshes.end();
+        if (draw_jitter[0] != 0.0f || draw_jitter[1] != 0.0f) {
+            if (!known && regs.depth_control.depth_write_enable) jittered_meshes.push_back(mesh);
+        } else if (known) {
+            draw_jitter = upscaler->Jitter();
+        }
+    }
+    if (jitter_control.map && db_desc.first && JitterDepth(db_desc.first)) {
+        // The map also describes the draw: indices, depth state, blend, jitter, bound images.
+        std::string images;
+        for (const auto image_id : bound_images) {
+            const auto& info = texture_cache.GetImage(image_id).info;
+            images += fmt::format(" {}x{}:{}{}#{}", info.size.width, info.size.height,
+                                  u32(info.pixel_format), info.props.is_depth ? "d" : "",
+                                  image_id.index);
+        }
+        std::printf("Jitter draw: ps %08x indices %u inst %u zwrite %u zfunc %u blend %u "
+                    "depth #%u jittered %d images%s\n",
+                    pipeline->FragmentHash(), regs.num_indices, regs.num_instances.NumInstances(),
+                    u32(regs.depth_control.depth_write_enable), u32(regs.depth_control.depth_func),
+                    u32(regs.blend_control[0].enable), db_desc.first.index,
+                    int(draw_jitter[0] != 0.0f || draw_jitter[1] != 0.0f), images.c_str());
     }
     UpdateDynamicState(pipeline, is_indexed);
     MarkPass(pipeline, state);
@@ -1157,6 +1309,9 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
 
     const vk::Pipeline handle = pipeline->Handle();
     const vk::Pipeline square = SquarePass(*pipeline);
+    const bool clear_smaa_weights = upscaler->SkipGameSmaa(vs_info.pgm_hash);
+    const bool skipped = !jitter_control.skip.empty() && SkippedShader(pipeline->FragmentHash());
+    const vk::Rect2D render_area{{0, 0}, {state.width, state.height}};
     const u32 num_indices = regs.num_indices;
     const u32 num_instances = regs.num_instances.NumInstances();
     const u32 first_vertex = vertex_offset;
@@ -1170,6 +1325,15 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
                 cmdbuf.draw(num_indices, num_instances, first_vertex, first_instance);
             }
         };
+        if (skipped) {
+            return;
+        }
+        if (clear_smaa_weights) {
+            const vk::ClearAttachment clear{vk::ImageAspectFlagBits::eColor, 0,
+                                            vk::ClearColorValue{std::array{0.0f, 0.0f, 0.0f, 0.0f}}};
+            cmdbuf.clearAttachments(clear, vk::ClearRect{render_area, 0, 1});
+            return;
+        }
         cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, handle);
         draw();
         if (square) [[unlikely]] {
@@ -1242,6 +1406,11 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     motion_draw = false;
     motion_geometry = 0;
     PrepareRenderState(pipeline);
+    if (upscaler->Enabled() &&
+        pipeline->FragmentHash() == upscaler->SkyMotionPs()) {
+        upscaler->OnGameMotionPass(cb_descs[0].first, cb_descs[2].first, db_desc.first);
+        ReadJitterControl();
+    }
     if (upscaler->Enabled() && std::popcount(pipeline->GetGraphicsKey().mrt_mask) == 1) {
         const auto& viewport = Regs().viewports[0];
         upscaler->OnDraw(pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash,
@@ -1280,7 +1449,8 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
     push_data.yoffset *= target_scale[1];
     pipeline->BindResources(set_writes, push_data);
     draw_jitter = {};
-    if (upscaler->Enabled() && db_desc.first && db_desc.first == camera_motion->Depth()) {
+    if (upscaler->Enabled() && db_desc.first && JitterDepth(db_desc.first) && !SamplesSceneDepth() &&
+        JitterInRange(pipeline->FragmentHash())) {
         draw_jitter = upscaler->Jitter();
     }
     UpdateDynamicState(pipeline, is_indexed);
@@ -2289,7 +2459,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
     // image (normalized sampling only; see Shader::ImageResource::needs_native).
     boost::container::small_vector<bool, 16> binding_proxy_ok;
     const bool sample_proxies = !TlgToggle::Disabled(TlgToggle::SampleSceneProxies) &&
-                                !on_helper && scene_targets->Reduced();
+                                !on_helper &&
+                                (scene_targets->Reduced() || scene_targets->ShadowsUpscaled());
 
     for (u32 image_index = 0; image_index < stage.images.size(); ++image_index) {
         const auto& image_desc = stage.images[image_index];
@@ -2747,6 +2918,30 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     // A proxy attachment cannot represent MSAA or a feedback loop that reads the
     // same image through the guest's native descriptor during this draw.
     bool reduced = scene_started && upscaler->RasterScaling() && key.num_samples == 1;
+    // tlg: a depth-only pass into a shadow map draws into its upscaled proxy instead.
+    u32 shadow_scale = 0;
+    if (db_desc.first && !key.mrt_mask && key.num_samples == 1) {
+        const auto& depth = texture_cache.GetImage(db_desc.first);
+        if (scene_targets->Eligible(depth) && !depth.binding.needs_rebind) {
+            shadow_scale = scene_targets->Upscale(depth);
+        }
+    }
+    if (shadow_scale) reduced = true;
+    if (db_desc.first && !shadow_scale && scene_targets->ShadowsUpscaled()) {
+        const auto& depth = texture_cache.GetImage(db_desc.first);
+        static u32 logged = 0;
+        if (depth.info.size.width == 2048 && depth.info.size.height == 2048 && logged < 16) {
+            ++logged;
+            std::printf("Shadow pass kept native: %#llx %s mrt %#x samples %u layer %u levels %u "
+                        "layers %u depth %d eligible %d rebind %d\n",
+                        (unsigned long long)depth.info.guest_address,
+                        vk::to_string(depth.info.pixel_format).c_str(), key.mrt_mask,
+                        u32(key.num_samples), db_desc.second.view_info.range.base.layer,
+                        depth.info.resources.levels, depth.info.resources.layers,
+                        int(depth.info.props.is_depth), int(scene_targets->Eligible(depth)),
+                        int(depth.binding.needs_rebind));
+        }
+    }
     // TLG_SCENE_DEBUG=<file>: once the file exists, why the passes of one frame keep the
     // native size (see NoteFrameStart).
     const bool debug_pass = scene_debug_frame && scene_started;
@@ -2801,7 +2996,11 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         }
         std::printf("Scene pass: reduced %d %s\n", reduced, why.c_str());
     }
-    push_data.scene_size = reduced ? SceneResolution::Pack(scene_targets->Size()) : 0;
+    // (A shadow pass keeps the FragCoord conversion right with a scene of k x 1920x1080.)
+    push_data.scene_size =
+        !reduced       ? 0
+        : shadow_scale ? SceneResolution::Pack({1920 * shadow_scale, 1080 * shadow_scale})
+                       : SceneResolution::Pack(scene_targets->Size());
     if (TlgStats::enabled) {
         TlgStats::reduced_draws.fetch_add(reduced, std::memory_order_relaxed);
         TlgStats::scene_draws.fetch_add(scene_started, std::memory_order_relaxed);
@@ -3027,7 +3226,9 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
         const auto proxy = pass_size.value_or(size);
         state.width = proxy.width;
         state.height = proxy.height;
-        target_scale = {float(size.width) / 1920.0f, float(size.height) / 1080.0f};
+        target_scale = shadow_scale
+                           ? std::array{float(shadow_scale), float(shadow_scale)}
+                           : std::array{float(size.width) / 1920.0f, float(size.height) / 1080.0f};
     }
     if (FrameCapture::Active()) {
         std::array<const VideoCore::ImageInfo*, AmdGpu::NUM_COLOR_BUFFERS> colors{};

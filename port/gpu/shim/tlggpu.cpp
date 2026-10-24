@@ -215,6 +215,10 @@ static void StartProfileWriter() {
 }
 #endif
 
+bool TlgHdrStartup() {
+    return TlgSettings::Get().startup_hdr;
+}
+
 extern "C" int tlggpu_init(const TlgGpuConfig* config) {
     TlgSettings::Load();
 #ifdef TLG_PGO_GENERATE

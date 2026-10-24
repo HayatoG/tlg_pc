@@ -68,6 +68,7 @@ std::atomic<bool> loading{false};
 std::atomic<u32> loading_done{0}, loading_total{0};
 std::atomic<u32> background_done{0}, background_total{0};
 bool dirty = false; // settings changed while open: saved on close
+std::chrono::steady_clock::time_point aa_label_until{}; // the AA label after F8
 int requested_tab = -1; // switch on the next frame (L1/R1, Q/E, menu opened)
 // The game's text dialog (SetTextEntry), guarded by imgui_mutex.
 bool text_entry_active = false;
@@ -370,6 +371,9 @@ void ImageTab() {
         ChoiceRow(TL("Display mode", "Modo de exibição"), s.display_mode, G::DisplayModeCount == 3 ? modes : G::DisplayModeNames.data(),
                   nullptr, G::DisplayModeCount, TL("Windowed, borderless window or exclusive fullscreen.", "Janela, janela sem borda ou tela cheia exclusiva."));
         CheckRow("VSync", s.vsync, TL("Waits for the monitor: no tearing, a little more input delay.", "Espera o monitor: sem tearing, um pouco mais de atraso de entrada."));
+        CheckRow("HDR", s.hdr,
+                 TL("The game's own HDR10 output, used when HDR is on in Windows display settings. Applies after a restart.",
+                    "A saída HDR10 do próprio jogo, usada quando o HDR está ligado nas configurações de tela do Windows. Vale após reiniciar."));
         ImGui::EndTable();
     }
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;
@@ -405,9 +409,47 @@ void ImageTab() {
     }
     ImGui::SeparatorText(TL("Anti-aliasing", "Anti-aliasing"));
     if (BeginRows("##antialiasing")) {
+        // tlg: DLAA needs DLSS (tlg_dlss.dll, an NVIDIA RTX card); the game's own SMAA runs either way.
+        ImGui::BeginDisabled(!s.dlss_supported);
+        CheckRow("DLAA (NVIDIA DLSS)", s.dlaa,
+                 !s.dlss_supported ? (s.dlss_problem.load() ? s.dlss_problem.load() : TL("Needs an NVIDIA RTX card and tlg_dlss.dll.", "Precisa de uma placa NVIDIA RTX e do tlg_dlss.dll."))
+                 : TL("Stable, smooth edges on foliage, feathers and railings: DLSS at native resolution on the game's own motion vectors. Off: the game's own anti-aliasing only. F8 switches it in game.",
+                      "Bordas estáveis e suaves em folhagem, penas e grades: DLSS na resolução nativa com os vetores de movimento do próprio jogo. Desligado: só o anti-aliasing do jogo. F8 alterna no jogo."));
+        ImGui::EndDisabled();
         CheckRow("SMAA 1x", s.smaa,
                  TL("Smooths jagged edges (feathers, grass, railings) on the final image. The game draws its HUD and subtitles into the same image, so text edges are smoothed too. About 0.2 to 0.4 ms per frame at 1080p (RTX 2060).",
                     "Suaviza o serrilhado (penas, grama, grades) na imagem final. O jogo desenha o HUD e as legendas na mesma imagem, então as bordas do texto também são suavizadas. Cerca de 0,2 a 0,4 ms por quadro em 1080p (RTX 2060)."));
+        ImGui::EndTable();
+    }
+    ImGui::SeparatorText(TL("Enhancements", "Melhorias"));
+    if (BeginRows("##enhancements")) {
+        static const char* const shadow_labels[] = {TL("Game (2048)", "Jogo (2048)"), "4096", "8192"};
+        static const int shadow_values[] = {1, 2, 4};
+        ChoiceRow(TL("Shadow resolution", "Resolução das sombras"), s.shadow_scale, shadow_labels, shadow_values, 3,
+                  TL("Draws the shadow maps at 2x or 4x the game's 2048x2048. Recommended: Game (2048). The sharper edges are hard to see, and 8192 costs about 8 FPS and about 1 GB of video memory.",
+                     "Desenha os mapas de sombra em 2x ou 4x os 2048x2048 do jogo. Recomendado: Jogo (2048). As bordas mais nítidas são difíceis de notar, e 8192 custa cerca de 8 FPS e cerca de 1 GB de memória de vídeo."));
+        ImGui::EndTable();
+    }
+    ImGui::SeparatorText(TL("Game effects (100% = as shipped)", "Efeitos do jogo (100% = original)"));
+    if (BeginRows("##effects")) {
+        SliderRow(TL("Ambient occlusion", "Oclusão de ambiente"), s.ssao, 0, 400, "%d%%",
+                  TL("Strength of the contact shadows in corners and under grass. 0% turns the pass off (saves a little GPU time). Above 150% the half-resolution AO shows blocky halos.",
+                     "Força das sombras de contato em cantos e sob a grama. 0% desliga o passe (economiza um pouco de GPU). Acima de 150% a AO em meia resolução mostra halos em blocos."));
+        SliderRow(TL("Bloom", "Bloom"), s.bloom, 0, 400, "%d%%",
+                  TL("Glow around bright light. 0% turns the pass off.", "Brilho em volta da luz forte. 0% desliga o passe."));
+        SliderRow(TL("Screen-space reflections", "Reflexos em espaço de tela"), s.ssr, 0, 400, "%d%%",
+                  TL("Reflections and light glare on water and wet stone. 0% turns the pass off.", "Reflexos e brilho de luz na água e na pedra molhada. 0% desliga o passe."));
+        SliderRow(TL("Motion blur", "Desfoque de movimento"), s.motion_blur, 0, 400, "%d%%",
+                  TL("Camera motion blur. 0% turns the pass off.", "Desfoque ao mover a câmera. 0% desliga o passe."));
+        SliderRow(TL("Chromatic aberration", "Aberração cromática"), s.chromatic, 0, 100, "%d%%",
+                  TL("Color fringes toward the screen edges. The game ships with this off: 0% is as shipped.", "Franjas de cor nas bordas da tela. O jogo vem com isto desligado: 0% é o original."));
+        SliderRow(TL("Vignette", "Vinheta"), s.vignette, 0, 100, "%d%%",
+                  TL("Darkened screen corners. The game ships with this off: 0% is as shipped.", "Cantos da tela escurecidos. O jogo vem com isto desligado: 0% é o original."));
+        SliderRow(TL("Game sharpening", "Nitidez do jogo"), s.game_sharpen, 0, 400, "%d%%",
+                  TL("The game's own sharpening filter. The difference is hard to see: 100% recommended.", "O filtro de nitidez do próprio jogo. A diferença é difícil de ver: 100% recomendado."));
+        SliderRow(TL("Character detail distance", "Distância de detalhe dos personagens"), s.lod, 25, 400, "%d%%",
+                  TL("How far the boy and Trico keep their detailed models. Higher keeps full detail further away.",
+                     "Até onde o menino e o Trico mantêm os modelos detalhados. Mais alto mantém o detalhe completo mais longe."));
         ImGui::EndTable();
     }
     ImGui::SeparatorText(TL("Color", "Cor"));
@@ -580,7 +622,8 @@ void ControlsTab() {
 int RestartChanges() {
     const auto& s = TlgSettings::Get();
     return (s.render_resolution != s.startup_render_resolution) + (s.engine_fps != s.startup_engine_fps) +
-           (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback);
+           (s.deferred_readback != s.startup_deferred_readback) + (s.stale_readback != s.startup_stale_readback) +
+           (s.hdr != s.startup_hdr);
 }
 
 void Menu() {
@@ -1528,6 +1571,15 @@ bool HandleEvent(const SDL_Event& event) {
             Vulkan::FrameCapture::Request();
             return true;
         }
+        // tlg: F8 switches between DLAA and the game's own SMAA (saved; the label shows briefly).
+        if (down && !event.key.repeat && event.key.key == SDLK_F8) {
+            auto& settings = TlgSettings::Get();
+            settings.dlaa = !settings.dlaa;
+            aa_label_until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            std::printf("AA: %s (F8)\n", settings.dlaa ? "DLAA" : "game SMAA");
+            TlgSettings::Save();
+            return true;
+        }
         // tlg: F10 shows or hides the performance overlay (FPS counter) at any time.
         if (down && !event.key.repeat && event.key.key == SDLK_F10) {
             auto& settings = TlgSettings::Get();
@@ -1659,11 +1711,18 @@ static bool NoticeActive() {
     return std::chrono::steady_clock::now() < notice_until;
 }
 
+/// tlg: the AA label (top right), for a moment after F8.
+bool AaLabelOn() {
+    const auto& s = TlgSettings::Get();
+    return s.upscaler == TlgSettings::UpscalerDlss &&
+           std::chrono::steady_clock::now() < aa_label_until;
+}
+
 bool Visible() {
     const auto& s = TlgSettings::Get();
     const auto now = std::chrono::steady_clock::now();
     return initialized && (loading || background_total || menu_open || text_entry_active || choice_active ||
-                           message_active || progress_on || now < progress_until || now < toast_until ||
+                           message_active || progress_on || now < progress_until || now < toast_until || AaLabelOn() ||
                            NoticeActive() ||
                            choice_retiring || s.show_fps ||
                            (s.actor_watch_supported && s.enemy_health_bar));
@@ -1827,6 +1886,19 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     }
     if (NoticeActive() && !menu_open) {
         NoticeBox();
+    }
+    if (AaLabelOn() && !menu_open) {
+        const auto& s = TlgSettings::Get();
+        const bool dlaa = s.dlaa && s.jitter && s.dlss_supported;
+        const ImVec2 size = ImGui::GetIO().DisplaySize;
+        ImGui::SetNextWindowPos({size.x - 8.0f, 8.0f}, ImGuiCond_Always, {1.0f, 0.0f});
+        ImGui::SetNextWindowBgAlpha(0.6f);
+        ImGui::Begin("##aa_label", nullptr,
+                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
+        ImGui::TextUnformatted(dlaa ? "AA: DLAA  (F8)" : "AA: game SMAA  (F8)");
+        ImGui::End();
     }
     ImGui::Render();
 

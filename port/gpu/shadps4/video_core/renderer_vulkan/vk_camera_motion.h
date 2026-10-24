@@ -68,6 +68,11 @@ public:
     /// `motion_view` (RG16F storage, General), pixels, previous minus current.
     void RecordMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view, vk::ImageView motion_view,
                       u32 width, u32 height);
+    /// tlg: converts the game's own motion target (R16G16, UV current - previous) into
+    /// `motion_view` (pixels, previous - current).
+    void RecordGameMotion(vk::CommandBuffer cmdbuf, vk::ImageView depth_view,
+                          vk::ImageView game_view, vk::ImageView motion_view, u32 width,
+                          u32 height);
 
     /// A bound constant buffer of 864 bytes: checks the scene constant signature.
     void OnConstants(const float* data);

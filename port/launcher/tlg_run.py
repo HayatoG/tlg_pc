@@ -145,8 +145,8 @@ DEFAULT_ENV = {
     'TLG_READBACKS': '2',          # the game reads GPU compute results on the CPU (AsyncMap)
     'TLG_READBACK_LINEAR': '1',    # small/linear render targets back to the CPU: auto exposure (#38, #40)
     'TLG_GC_BUDGET_MB': '5600',    # texture cache budget for 6 GB of VRAM
-    'TLG_UPSCALER': 'off',         # native image: GoW3's temporal upscalers made it shake
-    'TLG_JITTER': '0',
+    'TLG_UPSCALER': 'dlss',        # only as DLAA on the game's motion vectors (tlg.ini dlaa=1)
+    'TLG_JITTER': '1',             # jitter only while DLAA runs (needs tlg_dlss.dll + NVIDIA RTX)
     'TLG_OBJECT_MOTION': '0',
     'TLG_FRAME_STATS': '1',        # FPS in the log every 5 s (scripts/watch_session.sh heartbeat)
 }
@@ -177,6 +177,8 @@ DEFAULT_SETTINGS = {
 FRAME_RATES = ['30', '60', 'unlocked']
 # The frame rate mode prepare() really applied (another eboot build stays at 30).
 applied_frame_rate = '30'
+# The size the resolution patch really applied (None: the game's own 1920x1080).
+applied_resolution = None
 
 # Keyboard and mouse defaults of src/runtime_pad.c, in its key_map syntax ('|': several).
 DEFAULT_KEYS = {
@@ -458,7 +460,8 @@ def set_mod_enabled(key, enabled):
 def prepare(settings, log=print):
     """Builds out/boot-linked.bin, out/content.bin and out/patches.bin (frame rate patches and
     any enabled mod); returns the module list that was linked."""
-    global applied_frame_rate
+    global applied_frame_rate, applied_resolution
+    applied_resolution = None
     game = settings['game_dir']
     scripts = PORT_DIR / 'scripts'
     modules = ['libc.prx', 'libSceFios2.prx']
@@ -482,6 +485,8 @@ def prepare(settings, log=print):
             log(line)
             if line.startswith('Frame rate: ') and line.endswith(' patch writes'):
                 applied_frame_rate = line.split()[2]
+            if line.startswith('Resolution patch resolution: '):
+                applied_resolution = line.split()[-2]  # '... 1920x1080 -> WxH (bytes)'
     isa_table(log)
     return modules
 
@@ -604,6 +609,9 @@ def build_env(settings, extra=None):
     env['TLG_ENGINE_FPS'] = {'30': '30', '60': '60'}.get(applied_frame_rate, '240')
     if applied_frame_rate == 'unlocked':
         env.setdefault('TLG_VBLANK_HZ', '0')
+    # The game renders natively at the patched size: the upscaler stays off (vk_temporal_upscaler).
+    if applied_resolution:
+        env['TLG_RESOLUTION_PATCH'] = applied_resolution
     restart = f'"{sys.executable}" --play' if FROZEN else f'"{sys.executable}" "{Path(__file__).resolve()}"'
     env.setdefault('TLG_RESTART_COMMAND', restart)
     # Linux package: the libraries built with the port (SDL3, FFmpeg, ...) are in out/lib, never the

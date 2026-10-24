@@ -126,10 +126,23 @@ jobs:
           progress_pid=$!
           trap 'kill "$progress_pid" 2>/dev/null || true' EXIT
           TLG_LTO=OFF bash build.sh
+      # DLAA: NVIDIA's DLSS SDK (pinned release) and the MSVC bridge (gpu/dlss_bridge). The SDK
+      # license allows shipping nvngx_dlss.dll with the application; NVIDIA's license text ships too.
+      - name: DLSS SDK
+        uses: actions/checkout@v4
+        with:
+          repository: NVIDIA/DLSS
+          ref: v310.9.16
+          path: dlss-sdk
+      - name: DLSS bridge
+        run: |
+          DLSS_SDK_ROOT=$(cygpath -u "$GITHUB_WORKSPACE")/dlss-sdk \
+          CMAKE_EXE="/c/Program Files/CMake/bin/cmake.exe" bash packaging/windows/build_dlss.sh
       - name: Package
         env:
           MSYS2_ROOT: ${{ runner.temp }}/msys64
           WINPYTHON_WIN: ${{ steps.python.outputs.python-path }}
+          TLG_REQUIRE_DLSS: '1'
         run: |
           export MSYS2_ROOT=$(cygpath -u "$MSYS2_ROOT")
           export WINPYTHON=$(cygpath -u "$WINPYTHON_WIN")

@@ -81,8 +81,24 @@ public:
     /// This frame's sub-pixel jitter in pixels (screen x right, y down); zero when off and after
     /// the upscale (post and UI are not jittered).
     [[nodiscard]] std::array<float, 2> Jitter() const noexcept {
+        if (GameMotion()) return jitter; // the post of a frame runs before the next G-buffer
         return done_this_frame ? std::array<float, 2>{} : jitter;
     }
+
+    /// tlg: DLAA on the game's own motion target (DLSS at 1920x1080, no resolution patch).
+    [[nodiscard]] bool GameMotion() const noexcept {
+        return game_motion_on && game_motion_ok && jitter_active && !dlss_failed;
+    }
+    [[nodiscard]] u64 SkyMotionPs() const noexcept { return sky_motion_ps; }
+    /// The game's SMAA blending-weight pass (vertex shader; edges 0ea3ec8b, blend 0811cca2).
+    /// While DLAA runs it is cleared instead: zero weights make the blend pass a plain copy,
+    /// so DLSS gets the unfiltered, temporally consistent edges it expects.
+    [[nodiscard]] bool SkipGameSmaa(u64 vs_hash) const;
+    /// The scene depth size of the last sky pass (the game's render size, patched or not).
+    [[nodiscard]] std::array<u32, 2> GameSize() const noexcept { return game_size; }
+    /// The sky pass writes the HDR scene, the motion target and the scene depth of a frame.
+    void OnGameMotionPass(VideoCore::ImageId scene, VideoCore::ImageId motion,
+                          VideoCore::ImageId depth);
 
     // Scaled presets.
 
@@ -140,6 +156,8 @@ private:
     u64 view_uses = 0;
 
     void Run();
+    void RunGameMotion();
+    void AdvanceJitter();
     void RunScaled();
     void RunUiOnly(VideoCore::ImageId color, VideoCore::ImageId depth);
     void EnsureUiResources(u32 width, u32 height, vk::Format color, vk::Format depth);
@@ -171,7 +189,7 @@ private:
     /// Records DLSS into `cmdbuf` (output in General). `hdr`: linear scene color input.
     bool RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource& color,
                     const Dlss::Resource& depth, u32 w, u32 h, u32 ow, u32 oh, float frame_ms,
-                    bool hdr);
+                    bool hdr, std::array<float, 2> frame_jitter);
     /// Records FSR 4 into output_image; on a permanent failure FSR 3 takes over.
     bool RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image color, Fsr4Upscaler::Image depth,
                     u32 w, u32 h, u32 ow, u32 oh, float frame_ms);
@@ -205,6 +223,12 @@ private:
     std::array<float, 2> jitter{};
     u32 jitter_index = 0;
     bool reset = true;
+    /// DLAA's own history reset: the shared `reset` is set every frame by the UI and FSR paths.
+    bool game_reset = true;
+    /// The emulator starts several frames per game frame; DLAA counts game frames instead.
+    std::chrono::steady_clock::time_point last_game_motion{};
+    bool jitter_started = false;
+    bool jitter_pending = false; ///< RunGameMotion ran: advance at the next display pass
     u64 frame_id = 0;
     std::chrono::steady_clock::time_point last_frame{};
 
@@ -213,6 +237,18 @@ private:
     bool context_hdr = true;
     u32 target_width = 1920, target_height = 1080; ///< output size of scaled presets
     u64 ui_trigger_vs = 0x34e8a281;
+    // tlg: game-motion DLAA (TLG_GAME_MOTION=0 disables).
+    bool game_motion_on = true;
+    bool game_motion_ok = true; ///< false after a format mismatch
+    bool jitter_active = false; ///< this frame jitters for DLSS (OnFrameStart)
+    u64 sky_motion_ps = 0x5fce13a4;
+    u64 game_trigger_hash = 0x252f2091;
+    struct GameFrame {
+        VideoCore::ImageId scene{}, motion{}, depth{};
+        std::array<float, 2> jitter{};
+        bool valid = false;
+    } game_frame;
+    std::array<u32, 2> game_size{};
     VideoCore::ImageId ldr_target{};
     VideoCore::ImageId ui_color{}, ui_depth{};
     bool ui_phase = false;         ///< from the upscale to the next display pass

@@ -178,8 +178,8 @@ int32_t CreateFeature(VkCommandBuffer command, const TlgDlssFeature* desc) {
     settings.InFeatureCreateFlags =
         NVSDK_NGX_DLSS_Feature_Flags_MVLowRes |
         (desc->depth_inverted ? NVSDK_NGX_DLSS_Feature_Flags_DepthInverted : 0) |
-        (desc->hdr ? NVSDK_NGX_DLSS_Feature_Flags_IsHDR | NVSDK_NGX_DLSS_Feature_Flags_AutoExposure
-                   : 0);
+        (desc->hdr ? NVSDK_NGX_DLSS_Feature_Flags_IsHDR : 0) |
+        (desc->hdr == 1 ? NVSDK_NGX_DLSS_Feature_Flags_AutoExposure : 0);
     const auto result = NGX_VULKAN_CREATE_DLSS_EXT1(state.device, command, 1, 1, &state.feature,
                                                    state.parameters, &settings);
     if (!Check("DLSS feature creation", result) || !state.feature) {
@@ -189,7 +189,7 @@ int32_t CreateFeature(VkCommandBuffer command, const TlgDlssFeature* desc) {
     state.feature_desc = *desc;
     Log(0, "DLSS %ux%u -> %ux%u, quality %d, preset %u%s", desc->input_width, desc->input_height,
         desc->output_width, desc->output_height, desc->quality, desc->preset,
-        desc->hdr ? ", HDR input" : "");
+        desc->hdr == 1 ? ", HDR input" : desc->hdr ? ", HDR input, fixed exposure" : "");
     return 1;
 }
 
