@@ -26,19 +26,35 @@ typedef struct { int unused; } IsaRegs;
 static void *isa_table;
 static unsigned char *image;
 static int gpu_enabled=1;
-static volatile int speculative_expected, gpu_calls;
-static volatile unsigned char *page;
+static volatile int speculative_expected, gpu_calls, nested_read, nested_recovered;
+static volatile unsigned char *page, *other;
 static void isa_context_regs(CONTEXT *c, IsaRegs *r, int to) { (void)c; (void)r; (void)to; }
 static int isa_rewrite_trap(void *table, uintptr_t at, IsaRegs *regs, void *xmm, uintptr_t *rip) {
     (void)table; (void)at; (void)regs; (void)xmm; (void)rip; return 0;
 }
 static LONG fatal_exception(EXCEPTION_POINTERS *info) { (void)info; return EXCEPTION_CONTINUE_SEARCH; }
 static int tlggpu_handle_fault(void *context, void *address) {
-    (void)context; (void)address;
+    (void)context;
     ++gpu_calls;
     if (speculative_expected) {
         fputs("FAIL: speculative worker entered GPU readback before recovery\n",stderr);
         ExitProcess(99);
+    }
+    if (address==(void *)other) {
+        fputs("FAIL: guarded read inside the fault handler entered GPU readback\n",stderr);
+        ExitProcess(96);
+    }
+    if (nested_read) {
+        /* As the texture cache's first image hash in the write-fault handler: a guarded read
+         * of another protected page faults again inside this handler and must recover. */
+        sigjmp_buf recovery;
+        if (!tlg_setjmp(recovery)) {
+            runtime_fault_recover=&recovery;
+            volatile unsigned char value=*other;
+            (void)value;
+            ExitProcess(95);
+        }
+        nested_recovered+=runtime_fault_recover==NULL;
     }
     DWORD old;
     if (!VirtualProtect((void *)page,4096,PAGE_READWRITE,&old)) ExitProcess(98);
@@ -79,9 +95,22 @@ int main(void) {
     require(VirtualProtect((void *)page,4096,PAGE_READONLY,&old),"protect write");
     *page=42;
     require(*page==42 && gpu_calls==2,"normal write still resolves through GPU tracking");
+
+    /* A guarded read inside the GPU fault handler recovers from its nested fault and the
+     * outer write still completes (TLG freeze 2026-10-27: it waited for a second readback). */
+    other=VirtualAlloc(NULL,4096,MEM_RESERVE|MEM_COMMIT,PAGE_NOACCESS);
+    require(other!=NULL,"allocate second protected page");
+    require(VirtualProtect((void *)page,4096,PAGE_READONLY,&old),"protect write again");
+    nested_read=1;
+    *page=7;
+    nested_read=0;
+    require(*page==7 && gpu_calls==3 && nested_recovered==1,
+            "guarded read in the fault handler recovers; the write completes");
+    VirtualFree((void *)other,0,MEM_RELEASE);
     VirtualFree((void *)page,0,MEM_RELEASE);
     RemoveVectoredExceptionHandler(handler);
-    puts("PASS: speculative recovery precedes readback; normal read/write tracking preserved");
+    puts("PASS: speculative recovery precedes readback; normal read/write tracking preserved; "
+         "nested guarded read recovers");
     return 0;
 }
 '''

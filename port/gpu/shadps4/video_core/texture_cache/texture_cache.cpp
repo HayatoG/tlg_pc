@@ -486,8 +486,22 @@ void TextureCache::InvalidateAlias(Image& image) {
 void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
     if (image.hash == 0) {
         // Initialize hash
+        // tlg: this runs in the write-fault handler with the cache lock held. A page whose
+        // image readback is still pending is read-protected, and the hash faulted into that
+        // readback, which needs the GPU thread: a deadlock while the GPU thread waited for the
+        // draw pipe and the draw pipe for this lock (route pulse, 2026-10-27). The read gives up on
+        // such a fault instead (runtime_fault_recover); the hash stays 0, so the next refresh
+        // uploads the image.
         const u8* addr = std::bit_cast<u8*>(image.info.guest_address);
-        image.hash = XXH3_64bits(addr, image.info.guest_size);
+        sigjmp_buf* outer_recover = runtime_fault_recover;
+        sigjmp_buf recover;
+        if (sigsetjmp(recover, 0)) {
+            runtime_fault_recover = outer_recover;
+        } else {
+            runtime_fault_recover = &recover;
+            image.hash = XXH3_64bits(addr, image.info.guest_size);
+            runtime_fault_recover = outer_recover;
+        }
     }
     image.flags |= ImageFlagBits::MaybeCpuDirty;
     UntrackImage(image_id);
