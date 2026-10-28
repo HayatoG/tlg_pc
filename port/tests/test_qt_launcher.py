@@ -48,7 +48,8 @@ class TextTests(unittest.TestCase):
         for path in QT_DIR.glob('*.py'):
             keys |= set(re.findall(r"\bt_?\('([a-z0-9_]+)'", path.read_text(encoding='utf-8')))
         keys |= {'gfx_what_' + k for k in ('display_mode', 'vsync', 'show_fps', 'frame_rate', 'gpu_readbacks',
-                                           'native_audio', 'close_on_play', 'reopen_launcher', 'vram_budget_mb')}
+                                           'native_audio', 'skip_logos', 'close_on_play', 'reopen_launcher',
+                                           'vram_budget_mb')}
         keys |= {'fps_' + k for k in tlg_run.FRAME_RATES} | {'readbacks_' + k for k in '012'}
         keys |= {'gfx_preset_' + p for p in ('performance', 'balanced', 'quality', 'ps4')}
         missing = sorted(k for k in keys if not k.endswith('_') and k not in self.strings and k not in tk)

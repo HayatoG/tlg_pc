@@ -96,6 +96,7 @@ TEXT = {
     'color_gamma': ('Gamma (1 = unchanged)', 'Gama (1 = sem alteração)'),
     'audio': ('Audio', 'Áudio'),
     'native_audio': ('Native audio (libSceNgs2.sprx from your console)', 'Áudio nativo (libSceNgs2.sprx do seu console)'),
+    'skip_logos': ('Skip the boot logos', 'Pular os logotipos de abertura'),
     'controls': ('Controls', 'Controles'),
     'menu_confirm': ('Menu confirm button (next launch)', 'Botão de confirmação (próxima inicialização)'),
     'mouse_enabled': ('Mouse turns the camera', 'Mouse gira a câmera'),
@@ -465,6 +466,7 @@ class Launcher:
                    on_change=self.build)
         audio = self.card(setup, self.t('audio'), 1, 0, span=2)
         self.check(audio, 0, 'native_audio')
+        self.check(audio, 1, 'skip_logos')
 
         image = self.settings_page('image', 'image_hint')
         video = self.card(image, self.t('video'), 0, 0)

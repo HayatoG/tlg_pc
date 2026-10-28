@@ -41,6 +41,8 @@
   "gfx_what_show_fps": {"en": "Shows the performance overlay when the game starts (F10 toggles it in the game).", "pt": "Mostra o overlay de desempenho ao abrir o jogo (F10 liga e desliga lá dentro)."},
   "gfx_what_gpu_readbacks": {"en": "How exactly the GPU results the game reads back are copied. Precise is what this port uses: the game reads GPU compute results on the CPU; Fast skips them.", "pt": "Com que precisão os resultados da GPU que o jogo lê de volta são copiados. Preciso é o que este port usa: o jogo lê na CPU resultados de compute da GPU; Rápido os pula."},
   "gfx_what_eager_readback": {"en": "Copies GPU results the game reads back at each fence, ahead of time.", "pt": "Copia, a cada fence, os resultados da GPU que o jogo vai ler, antes de ele pedir."},
+  "skip_logos": {"en": "Skip the boot logos", "pt": "Pular os logotipos de abertura"},
+  "gfx_what_skip_logos": {"en": "Goes straight to the title screen: the boot logos are skipped (patched in memory at start).", "pt": "Vai direto para a tela de título: os logotipos de abertura são pulados (alterado na memória ao iniciar)."},
   "close_on_play": {"en": "Close the launcher when the game starts", "pt": "Fechar o launcher ao abrir o jogo"},
   "reopen_launcher": {"en": "Open the launcher again when the game closes", "pt": "Abrir o launcher de novo ao fechar o jogo"},
   "gfx_what_reopen_launcher": {"en": "With the launcher closed on play, it comes back when you quit the game. Nothing stays open while you play: a small waiting process only.", "pt": "Com o launcher fechado ao jogar, ele volta quando você sai do jogo. Nada fica aberto enquanto você joga: só um pequeno processo esperando."},
