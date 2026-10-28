@@ -86,7 +86,7 @@ class LauncherUITest(unittest.TestCase):
     def test_all_settings_remain_available_and_existing_callbacks_save(self):
         expected = {'game_dir', 'system_lib_dir', 'native_audio', 'vsync', 'show_fps',
                     'vram_budget_mb', 'mouse_enabled', 'mouse_invert_y', 'mouse_sensitivity',
-                    'level_select', 'bridge_fix'}
+                    'level_select', 'bridge_fix', 'hide_button_hints'}
         self.assertEqual(set(self.app.vars), expected)
         self.assertEqual(set(self.app.ini_vars), set(ui.INI_DEFAULTS) - {'rcas', 'cas'})
         self.app.vars['vram_budget_mb'].set(7000)

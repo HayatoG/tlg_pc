@@ -166,7 +166,68 @@ ControllerMenu.Hide = function() hide() luaCommand("trico resume") end
 end
 )";
 
-/// Edits game chunk `name` for the debug menus and the bridge fix; true when it changed.
+/// The start of the line that holds `at`.
+size_t LineStart(const std::string& text, size_t at) {
+    const size_t line = text.rfind('\n', at);
+    return line == std::string::npos ? 0 : line + 1;
+}
+
+/// Finds `needle` where it starts a line: only spaces and tabs may come before it. The game's
+/// commented-out lines ("-- ...") never match, so an anchor that only shows up inside a comment
+/// (the game explains its own switches that way) is not mistaken for real code.
+size_t FindLine(const std::string& text, std::string_view needle) {
+    for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1)) {
+        bool code = true;
+        for (size_t i = LineStart(text, at); i < at; ++i) {
+            if (text[i] != ' ' && text[i] != '\t') {
+                code = false;
+                break;
+            }
+        }
+        if (code) return at;
+    }
+    return std::string::npos;
+}
+
+/// Hides the game's button hints (setting hide_button_hints). They are the Guide system
+/// (game/scripts/guide/guidesystem.lua): the frame, the pad glyph and the blinking icon the
+/// game shows when a button does something (jump, grab, call Trico). The game has both
+/// switches and both are used here: GameConfig.guideSystem = 0 is the one the E3 build path
+/// uses (allstages_common_temp.lua) and turns the engine's guide system off; the guide
+/// system's own "do not start the guide system" line makes CreateObject return, so no guide
+/// object exists to draw. The flag alone would keep what the engine already created, the
+/// early return alone would keep the guide system running with nothing in it. A chunk whose
+/// anchor does not match is left untouched.
+/// True when the chunk changed.
+bool GuideEdits(std::string& patched) {
+    bool changed = false;
+    // GameConfig.guideSystem = 0 (stages/common/guide/basic_system.lua): the guide system
+    // starts here, once per stage and once per restart.
+    if (FindLine(patched, "function Guide_Basic_Reset()") != std::string::npos) {
+        const size_t start = FindLine(patched, "GuideSystem:Start()");
+        if (start != std::string::npos) {
+            patched.insert(LineStart(patched, start),
+                           "\tif GameConfig then pcall(function() GameConfig.guideSystem = 0 end) end"
+                           "\t-- tlg: no button hints\n");
+            changed = true;
+        }
+    }
+    // CreateObject = function(self) (guide/guidesystem.lua): the guide objects. The early
+    // return is the game's own commented-out switch ("do not start the guide system").
+    if (patched.find("Guide_SetGuideNum") != std::string::npos) {
+        static constexpr std::string_view Create = "CreateObject = function(self)";
+        const size_t create = FindLine(patched, Create);
+        if (create != std::string::npos) {
+            patched.insert(create + Create.size(),
+                           "\n\t\tif true then return end\t-- tlg: the button hints stay hidden");
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+/// Edits game chunk `name` for the debug menus, the bridge fix and the button hints; true when
+/// it changed.
 bool GameEdits(std::string& patched, std::string_view name) {
     const auto& s = TlgSettings::Get();
     if (s.level_select && name == "data_trico/game/scripts/startup.lua") {
@@ -217,6 +278,10 @@ bool GameEdits(std::string& patched, std::string_view name) {
             return false;
         }
         patched.insert(at, "--");
+        return true;
+    }
+    if (s.hide_button_hints && GuideEdits(patched)) {
+        std::printf("Lua: button hints hidden in %.*s\n", static_cast<int>(name.size()), name.data());
         return true;
     }
     return false;

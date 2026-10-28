@@ -25,6 +25,7 @@ SETTING_ROWS = {
     's:reopen_launcher': ('reopen_launcher', 'switch', False),
     's:level_select': ('level_select', 'switch', False),
     's:bridge_fix': ('bridge_fix', 'switch', False),
+    's:hide_button_hints': ('hide_button_hints', 'switch', False),
     's:vram_budget_mb': ('vram_budget_mb', 'slider', False),
 }
 DISPLAY_MODES = ('Windowed', 'Borderless', 'Fullscreen')
@@ -45,6 +46,7 @@ SECTIONS = (
     ('gfx_sec_vram', ('s:vram_budget_mb',)),
     ('gfx_sec_overlay', ('s:show_fps',) + OVERLAY_IDS),
     ('gfx_sec_launcher', ('s:native_audio', 's:close_on_play', 's:reopen_launcher')),
+    ('gfx_sec_hints', ('s:hide_button_hints',)),
     ('gfx_sec_debug', ('s:level_select', 's:bridge_fix')),
 )
 # Sliders greyed out while the switch they belong to is off.

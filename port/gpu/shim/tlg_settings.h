@@ -52,6 +52,10 @@ struct Values {
     /// Debug (launcher, at start; tlg_lua.cpp): the game's level select and QA menu, and the
     /// collapsing bridge fix (skips the slow motion that can freeze the game in the pit).
     std::atomic<bool> level_select{false}, bridge_fix{false};
+    /// Hide the game's button hints (launcher, at start; tlg_lua.cpp): the Guide system draws
+    /// the box with the button to press (jump, grab, call Trico). With it on, the game never
+    /// creates those hints. Subtitles and the aim reticle are not touched.
+    std::atomic<bool> hide_button_hints{false};
     /// Enhancements (menu, live): shadow map resolution as a multiple of the game's 2048
     /// (1, 2 or 4; vk_scene_resolution SetShadowScale). 8192 looked barely different, ~8 FPS.
     std::atomic<int> shadow_scale{1};

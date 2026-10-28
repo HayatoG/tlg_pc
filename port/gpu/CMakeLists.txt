@@ -439,6 +439,10 @@ add_executable(graphics-settings-test EXCLUDE_FROM_ALL ../tests/test_graphics_se
     shim/tlg_settings.cpp)
 target_include_directories(graphics-settings-test PRIVATE shim)
 target_compile_options(graphics-settings-test PRIVATE -UNDEBUG)
+add_executable(lua-guide-test EXCLUDE_FROM_ALL ../tests/test_lua_guide.cpp
+    shim/tlg_lua.cpp shim/tlg_settings.cpp)
+target_include_directories(lua-guide-test PRIVATE shim)
+target_compile_options(lua-guide-test PRIVATE -UNDEBUG)
 add_executable(readback-sources-test EXCLUDE_FROM_ALL ../tests/test_readback_sources.cpp)
 target_include_directories(readback-sources-test PRIVATE shadps4)
 target_compile_options(readback-sources-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)

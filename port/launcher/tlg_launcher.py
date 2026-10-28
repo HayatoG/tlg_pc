@@ -70,6 +70,12 @@ TEXT = {
     'debug': ('Debug (at start)', 'Depuração (ao iniciar)'),
     'level_select': ('Level select and QA menu', 'Seleção de fases e menu de QA'),
     'bridge_fix': ('Collapsing bridge freeze fix', 'Correção do travamento da ponte que desaba'),
+    'hints': ('On-screen hints', 'Dicas na tela'),
+    'hide_button_hints': ('Hide the button hints', 'Esconder as dicas de botão'),
+    'hints_hint': ('The game shows a box with the button to press (jump, grab, call Trico). This option keeps those boxes '
+                   'away; it applies at the next start. Subtitles and the aim reticle stay.',
+                   'O jogo mostra uma caixa com o botão a apertar (pular, agarrar, chamar Trico). Esta opção esconde essas '
+                   'caixas; vale na próxima vez que o jogo abrir. As legendas e a mira continuam.'),
     'debug_hint': ('Level select: hold L1 while the title menu closes (Continue/New Game). QA menu: in game, hold L1 and press L3. '
                    'Bridge fix: only if the game freezes when the bridge in the pit collapses; skips that slow motion. '
                    'GoldHEN patches by illusiony and DanielSvoboda.',
@@ -463,8 +469,13 @@ class Launcher:
         self.combo(lang, 1, 'ui_language', UI_LANGUAGES,
                    lambda k: self.t('auto') if k == 'auto' else UI_LANGUAGE_NAMES[k],
                    on_change=self.build)
-        audio = self.card(setup, self.t('audio'), 1, 0, span=2)
+        audio = self.card(setup, self.t('audio'), 2, 0, span=2)
         self.check(audio, 0, 'native_audio')
+        hints = self.card(setup, self.t('hints'), 1, 0, span=2)
+        self.check(hints, 0, 'hide_button_hints')
+        ttk.Label(hints, text=self.t('hints_hint'), style='Card.TLabel',
+                  foreground=self.colors['muted'], wraplength=420, justify='left').grid(
+            row=1, column=0, columnspan=3, sticky='w', pady=(10, 0))
 
         image = self.settings_page('image', 'image_hint')
         video = self.card(image, self.t('video'), 0, 0)

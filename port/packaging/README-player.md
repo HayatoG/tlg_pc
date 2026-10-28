@@ -44,6 +44,8 @@ Tudo vem do **seu** PS4 (GoldHEN + Itemzflow). Nada disso vai no download. Use *
 
 **Texto japonês experimental (EU 01.03):** com CUSA03745 e a atualização 01.03 aplicada na mesma pasta, escolha **日本語 (EU 1.03 text fallback)**. Não mova nem apague os arquivos franceses: o port os oculta apenas da visão do jogo nesta execução. Para voltar ao francês, escolha Français e inicie novamente. É necessário um launcher e runtime que incluam esse recurso; isso não adiciona suporte ao executável da edição japonesa do disco. Menus e dicas de jogo em japonês foram verificados; áudio/texto do jogo inteiro ainda não foram testados. Os botões de controle não são trocados.
 
+**Dicas de botão na tela (opcional):** no launcher (no novo: **Gráficos → Dicas na tela (ao iniciar)**; no clássico: **Jogo e idioma → Dicas na tela**), ligue **Esconder as dicas de botão** para tirar da tela as caixinhas com o botão a apertar (pular, agarrar, chamar Trico). Vale do próximo start do jogo em diante; as legendas e a mira continuam.
+
 No Linux, `./install_desktop.sh` adiciona o jogo ao menu de aplicativos.
 
 ### Durante o jogo
@@ -124,6 +126,8 @@ Everything comes from **your own** PS4 (GoldHEN + Itemzflow). None of it is in t
 5. Pick one of the languages offered for your game folder and click **Play**. The first start takes a little longer.
 
 **Experimental Japanese text (EU 01.03):** with CUSA03745 and update 01.03 applied to the same folder, select **日本語 (EU 1.03 text fallback)**. Do not move or delete the French archives: the port hides them only from the game's view for that launch. To return to French, select Français and launch again. Both launcher and runtime must contain this feature; it does not add Japanese-region disc executable support. Japanese menus and gameplay prompts were verified, not full-game audio/text coverage. Controller buttons are not swapped.
+
+**On-screen button hints (optional):** in the launcher (new: **Graphics → On-screen hints (at start)**; classic: **Game & language → On-screen hints**), turn on **Hide the button hints** to keep the boxes with the button to press (jump, grab, call Trico) away. It applies from the next game start on; subtitles and the aim reticle stay.
 
 On Linux, `./install_desktop.sh` adds the game to the applications menu.
 

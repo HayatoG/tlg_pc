@@ -321,6 +321,7 @@ Uso: `TLG_<OPÇÃO>=valor ./run_tlg.sh`. Os padrões abaixo já estão em `port/
 | `TLG_FPS` | `30` | taxa de quadros: `30` (como no PS4), `60` ou `unlocked`; patches só no eboot 1.03, ver [60fps.md](60fps.md) |
 | `TLG_FRAME_STATS` | `1` | FPS e diagnóstico de engasgos no log a cada 5 s |
 | `TLG_SHOW_FPS` | `0` | overlay de FPS ligado desde o início (F10 alterna em jogo) |
+| `TLG_HIDE_BUTTON_HINTS` | `0` | esconde as dicas de botão do jogo (a caixa com o botão a apertar); só pelo launcher, vale do próximo start; legendas e mira ficam |
 | `TLG_UI_LANG` | idioma do sistema | idioma do menu do overlay: `pt_BR` ou `en_US` |
 | `TLG_PAD_FILE` | — | entrada roteirizada do controle (testes automáticos) |
 | `TLG_TOGGLE_FILE` | — | máscara de otimizações desligadas, lida em tempo real |
@@ -331,6 +332,28 @@ Uso: `TLG_<OPÇÃO>=valor ./run_tlg.sh`. Os padrões abaixo já estão em `port/
 | `TLG_NGS2_USERFX` / `TLG_NGS2_REVERB` / `TLG_NGS2_CUSTOM` / `TLG_NGS2_DELAY_TYPE` | `1` / — / — / `1` | mixer próprio, para depuração: `USERFX=0` não chama os efeitos do jogo (USER_FX); `REVERB=pass` deixa o rack de reverb passar a entrada sem processar; `CUSTOM=mute` cala os racks custom (chorus/delay); `DELAY_TYPE=0` faz o delay usar um downmix mono em vez de um por canal |
 
 Todas as opções do código usam o prefixo `TLG_` (o código herdado do gow3_pc foi renomeado).
+
+### Dicas de botão (`TLG_HIDE_BUTTON_HINTS`)
+
+A caixinha com o botão a apertar (pular, agarrar, chamar Trico) é o **Guide system** da engine, desenhado
+pelo módulo `anzu` (função de draw em `0x190fdf0`). O port não mexe no eboot: o shim de Lua
+(`port/gpu/shim/tlg_lua.cpp`) reescreve dois trechos dos scripts do jogo antes de a VM carregá-los.
+
+| Script | Âncora | O que a edição faz |
+|---|---|---|
+| `game/scripts/stages/common/guide/basic_system.lua` | `GuideSystem:Start()` | `GameConfig.guideSystem = 0` (a flag que o próprio jogo usa no caminho E3, `allstages_common_temp.lua`), dentro de `pcall` para o chunk não quebrar se a propriedade sumir |
+| `game/scripts/guide/guidesystem.lua` | `CreateObject = function(self)` | `return` imediato: o Guide system não cria nenhum objeto de dica, e aí não há o que desenhar (é a linha que o próprio jogo deixou comentada: "não iniciar o guide system") |
+
+As duas edições são necessárias: `Guide_Basic_Reset()` chama `GuideSystem:Start()` **antes** do
+`CommonStageEnter` (onde o caminho E3 liga a flag), então a flag sozinha chegaria tarde demais; e o
+`return` sozinho deixaria o Guide system ligado e vazio. As funções do engine que usam a lista de dicas
+(`Guide_SetEnable`, `Guide_fadeIn/fadeOut`, `Guide_SaveData`, `Guide_Reset`) conferem lista vazia/nula
+antes de usar, então não há crash com o Guide system sem dicas. As edições são aplicadas só quando a
+âncora existe: um script de outra build fica intacto.
+
+A opção só existe no launcher (vale do próximo start do jogo); o menu Insert do jogo não tem esse item.
+O log diz quais chunks foram editados (`Lua: button hints hidden in ...`); `TLG_LUA_DUMP=<pasta>` grava os
+scripts que o jogo carregou, antes da edição.
 
 Diagnóstico com o jogo aberto: `kill -USR1 <pid>` grava a pilha de todas as threads no log, e
 `scripts/watch_session.sh` faz isso sozinho quando o jogo fica 20 s sem frames.
