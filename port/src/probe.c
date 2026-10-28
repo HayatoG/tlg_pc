@@ -572,6 +572,210 @@ mismatch:
     printf("Lua hook: unavailable (code signature mismatch)\n");
 }
 
+#ifdef _WIN32
+/* Bind guard (the load crash family, 2026-10-28; TLG_BIND_GUARD: 1 fix, the default; 2 log only;
+ * 0 off). A job ({ptr, flags} entries at +0x88, count +0x90) binds what its entries borrow into
+ * its effect (+0x38, vt 0x16f0150): entry flag bit 28 marks an entry changed, job flag bit 30
+ * (+0x40) asks the render thread's consume (0xee5130) for a refresh, which re-borrows the marked
+ * entries, clears each mark (0xee83d8) and then bit 30 (0xee83f3), both plain read-modify-writes.
+ * The main thread's job update (0xe5f310) sets bit 30 first (0xe5f514), then re-inits wrappers
+ * (0xe44a80, their node goes to a deferred delete) and marks their entries (0xe60d0b, 0xe60ecb).
+ * A consume between the two refreshes too early and clears bit 30: the later mark stays with no
+ * refresh asked, and the effect keeps the dropped node after it is freed. The Dispatch then binds
+ * freed memory (path A, 0x1479c24), or CopyResource gets the stale node's resource (+0x2b0, path B:
+ * "CopyResource Error ... ByteWidth is not same"). Before each consume this asks the refresh again
+ * for a job with a mark and no bit 30 (check A). An effect that binds a node or wrapper none of its
+ * entries resolves to while nothing is marked (check C: the mark itself was lost to the plain
+ * writes) gets its borrowing entries marked first. The refresh only overwrites the effect's slots
+ * and borrows each wrapper's current node (making one into the wrapper when missing), so an extra
+ * refresh changes nothing; owned pairs (flag 0x100, new nodes on every mark) are never marked. */
+typedef void (ABI *BindConsume)(void *context, void *packet);
+static BindConsume bind_consume_next;
+static unsigned bind_mode;
+/* check A hits, check C hits, jobs checked, effects compared in full; detail lines */
+static int64_t bind_counts[4], bind_shown[2], bind_lines;
+
+static int bind_heap(uint64_t v, uint64_t n) { return v >= UINT64_C(0x1000000000) && v + n <= UINT64_C(0x1069800000) && !(v & 7); }
+static uint64_t bind_q(uint64_t v) { return *(uint64_t *)(uintptr_t)v; }
+static uint32_t bind_d(uint64_t v) { return *(uint32_t *)(uintptr_t)v; }
+/* The wrapper an entry borrows from (the refresh's resolution by flags & 0xf00000); 0 for none,
+ * 1 when a step is unreadable. */
+static uint64_t bind_wrapper(uint64_t p, uint32_t flags) {
+    if (!p) return 0;
+    switch (flags & 0xf00000) {
+    case 0x200000: {
+        if (!bind_heap(p, 0x90)) return 1;
+        const uint64_t q = bind_q(bind_q(p + 0x88) ? p + 0x88 : p + 0x80);
+        if (!q) return 0;
+        if (!bind_heap(q, 0x50)) return 1;
+        p = bind_q(q + 0x48);
+        break;
+    }
+    case 0x100000:
+        if (!bind_heap(p, 0x50)) return 1;
+        p = bind_q(p + 0x48);
+        break;
+    }
+    return !p || bind_heap(p, 0x40) ? p : 1;
+}
+static int bind_in(const uint64_t *set, unsigned n, uint64_t v) {
+    for (unsigned i = 0; i < n; ++i)
+        if (set[i] == v) return 1;
+    return 0;
+}
+static void bind_note(const char *what, uint64_t job, uint64_t table, int entry, unsigned slot, int index, uint64_t value) {
+    if (__atomic_fetch_add(&bind_lines, 1, __ATOMIC_RELAXED) >= 50) return;
+    const uint64_t p = entry >= 0 ? bind_q(table + 16 * entry) : 0;
+    const uint32_t f = entry >= 0 ? bind_d(table + 16 * entry + 8) : 0;
+    const uint64_t w = entry >= 0 ? bind_wrapper(p, f) : 0;
+    printf("Bind guard: %s (%s): job %#" PRIx64 " vt +%#" PRIx64 " flags %#x dirty %#x", what,
+           bind_mode == 1 ? "refresh asked" : "log only", job, bind_q(job) - (uint64_t)(uintptr_t)image,
+           bind_d(job + 0x40), bind_heap(job, 0x460) ? *(unsigned char *)(uintptr_t)(job + 0x45c) : 0xffu);
+    if (entry >= 0)
+        printf(", entry %d flags %#x ptr %#" PRIx64 " wrapper %#" PRIx64 " node %#" PRIx64, entry, f, p, w,
+               w > 1 ? bind_q(w + 0x38) : 0);
+    if (slot && index >= 0) printf(", effect +%#x[%d] holds %#" PRIx64, slot, index, value);
+    else if (slot) printf(", effect +%#x holds %#" PRIx64, slot, value);
+    printf("\n");
+}
+/* Check C for one job: the effect slot that binds something none of the entries resolves to
+ * (0 when every slot is current or the job cannot be read in full); *index gets the array element
+ * (-1 for a field) and *value what it holds. */
+static unsigned bind_stale(uint64_t eff, uint64_t table, uint32_t count, int *index, uint64_t *value) {
+    uint64_t wrappers[64], nodes[64 + 128], sources[64 + 128];
+    unsigned nw = 0, nn = 0, ns = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        const uint64_t w = bind_wrapper(bind_q(table + 16 * i), bind_d(table + 16 * i + 8));
+        if (w == 1) return 0;
+        if (!w) continue;
+        wrappers[nw++] = w;
+        if (bind_q(w + 0x38)) nodes[nn++] = bind_q(w + 0x38);
+    }
+    const uint64_t owned = bind_q(eff + 0xf8);
+    const uint32_t owned_count = bind_d(eff + 0x100);
+    if (owned_count > 128 || (owned_count && !bind_heap(owned, 8 * owned_count))) return 0;
+    for (uint32_t i = 0; i < owned_count; ++i)
+        if (bind_q(owned + 8 * i)) nodes[nn++] = bind_q(owned + 8 * i);
+    for (unsigned i = 0; i < nn; ++i)
+        if (bind_heap(nodes[i], 0x28)) sources[ns++] = bind_q(nodes[i] + 0x20);
+    /* {ptr, u32 count, u32 cap}: nodes at +0x48 +0x80 +0xb8 +0xd8, wrappers at +0x30 +0x68 +0xa0 */
+    static const unsigned arrays[7] = {0x48, 0x80, 0xb8, 0xd8, 0x30, 0x68, 0xa0};
+    for (unsigned a = 0; a < 7; ++a) {
+        const uint64_t arr = bind_q(eff + arrays[a]);
+        const uint32_t n = bind_d(eff + arrays[a] + 8);
+        if (n > 256 || (n && !bind_heap(arr, 8 * n))) return 0;
+        for (uint32_t i = 0; i < n; ++i) {
+            const uint64_t v = bind_q(arr + 8 * i);
+            if (v && !(a < 4 ? bind_in(nodes, nn, v) : bind_in(wrappers, nw, v))) {
+                *index = (int)i;
+                *value = v;
+                return arrays[a];
+            }
+        }
+    }
+    static const unsigned fields[4] = {0x2c0, 0x2c8, 0x2b0, 0x2b8};   /* wrappers, then node sources */
+    for (unsigned a = 0; a < 4; ++a) {
+        const uint64_t v = bind_q(eff + fields[a]);
+        if (v && !(a < 2 ? bind_in(wrappers, nw, v) : bind_in(sources, ns, v))) {
+            *index = -1;
+            *value = v;
+            return fields[a];
+        }
+    }
+    __atomic_fetch_add(&bind_counts[3], 1, __ATOMIC_RELAXED);
+    return 0;
+}
+static void bind_guard_check(void *packet) {
+    const unsigned char *link = *(unsigned char **)((unsigned char *)packet + 0x29e10);
+    for (unsigned n = 0; link && n < 65536; ++n, link = *(unsigned char **)link) {
+        const uint64_t job = *(uint64_t *)(link + 8);
+        if (!bind_heap(job, 0x98)) continue;
+        uint32_t *flags = (uint32_t *)(uintptr_t)(job + 0x40);
+        const uint64_t eff = bind_q(job + 0x38), table = bind_q(job + 0x88);
+        const uint32_t count = bind_d(job + 0x90);
+        if (!eff || (__atomic_load_n(flags, __ATOMIC_RELAXED) & 0xc0000000) || !count || count > 64 ||
+            !bind_heap(table, 16 * count))
+            continue;
+        __atomic_fetch_add(&bind_counts[2], 1, __ATOMIC_RELAXED);
+        int marked = -1;
+        for (uint32_t i = 0; i < count && marked < 0; ++i)
+            if (bind_d(table + 16 * i + 8) & 0x10000000) marked = (int)i;
+        if (marked >= 0) {   /* check A */
+            bind_note("entry marked, no refresh asked", job, table, marked, 0, -1, 0);
+            if (bind_mode == 1) __atomic_fetch_or(flags, 0x40000000, __ATOMIC_RELAXED);
+            __atomic_fetch_add(&bind_counts[0], 1, __ATOMIC_RELAXED);
+            continue;
+        }
+        uint64_t value = 0;
+        int index = -1;
+        const unsigned slot = bind_heap(eff, 0x2d8) && bind_q(eff) == (uint64_t)(uintptr_t)(image + 0x16f0150)
+                              ? bind_stale(eff, table, count, &index, &value) : 0;
+        if (!slot) continue;
+        bind_note("effect binds a stale object, no entry marked", job, table, -1, slot, index, value);
+        __atomic_fetch_add(&bind_counts[1], 1, __ATOMIC_RELAXED);
+        if (bind_mode != 1) continue;
+        for (uint32_t i = 0; i < count; ++i) {
+            uint32_t *f = (uint32_t *)(uintptr_t)(table + 16 * i + 8);
+            const uint32_t now = *f;
+            if (!(now & 0x100) && (now & 0xfe00) && bind_wrapper(bind_q(table + 16 * i), now) > 1)
+                __atomic_fetch_or(f, 0x10000000, __ATOMIC_RELAXED);
+        }
+        __atomic_fetch_or(flags, 0x40000000, __ATOMIC_RELAXED);
+    }
+}
+static ABI void bind_guard_consume(void *context, void *packet) {
+    bind_guard_check(packet);
+    bind_consume_next(context, packet);
+    static uint64_t last;
+    const uint64_t now = GetTickCount64();
+    if (now - last < 10000) return;
+    last = now;
+    const int64_t a = __atomic_load_n(&bind_counts[0], __ATOMIC_RELAXED), c = __atomic_load_n(&bind_counts[1], __ATOMIC_RELAXED);
+    if (bind_mode == 1 && a == bind_shown[0] && c == bind_shown[1]) return;   /* log only: every 10 s */
+    bind_shown[0] = a;
+    bind_shown[1] = c;
+    printf("Bind guard: so far %" PRId64 " marked entries with no refresh asked, %" PRId64
+           " stale bindings with no entry marked (%s); %" PRId64 " jobs checked, %" PRId64 " effects compared\n", a, c,
+           bind_mode == 1 ? "refresh asked each time" : "log only", __atomic_load_n(&bind_counts[2], __ATOMIC_RELAXED),
+           __atomic_load_n(&bind_counts[3], __ATOMIC_RELAXED));
+}
+static void install_bind_guard(Segment *segments, uint64_t count) {
+    const char *mode = getenv("TLG_BIND_GUARD");
+    bind_mode = mode ? (unsigned)strtoul(mode, NULL, 0) : 1;
+    if (!bind_mode) return;
+    /* the consume's refresh test and its bit 30 clear */
+    static const unsigned char test[9] = {0x41,0x8b,0x46,0x40, 0xa9,0x00,0x00,0x00,0x40};
+    static const unsigned char clear[13] = {0x41,0x8b,0x46,0x40, 0x25,0xff,0xff,0xff,0xbf, 0x41,0x89,0x46,0x40};
+    const uint64_t call = 0xc577f4, consume = 0xee5130;
+    int32_t relative;
+    if (!mapped(segments, count, 0xee7814, sizeof(test)) || memcmp(image + 0xee7814, test, sizeof(test)) ||
+        !mapped(segments, count, 0xee83f3, sizeof(clear)) || memcmp(image + 0xee83f3, clear, sizeof(clear)) ||
+        !mapped(segments, count, call, 5) || image[call] != 0xe8)
+        goto mismatch;
+    memcpy(&relative, image + call + 1, 4);
+    const uint64_t target = call + 5 + (int64_t)relative;   /* the consume, or another hook's stub */
+    if (target != consume && mapped(segments, count, target, 1)) goto mismatch;
+    unsigned char *stub = allocate(page_size);
+    static const unsigned char jump[] = {0x48,0xb8, 0,0,0,0,0,0,0,0, 0xff,0xe0}; /* movabs rax; jmp rax */
+    const uintptr_t hook = (uintptr_t)bind_guard_consume;
+    memcpy(stub, jump, sizeof(jump));
+    memcpy(stub + 2, &hook, 8);
+    const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + call + 5);
+    if (delta < INT32_MIN || delta > INT32_MAX) {
+        printf("Bind guard: unavailable (outside relative-call range)\n");
+        return;
+    }
+    bind_consume_next = (BindConsume)((uintptr_t)image + target);
+    protect(stub, page_size, 5);
+    relative = (int32_t)delta;
+    memcpy(image + call + 1, &relative, 4);
+    printf("Bind guard: ready (%s)\n", bind_mode == 1 ? "fix" : "log only");
+    return;
+mismatch:
+    printf("Bind guard: unavailable (code signature mismatch)\n");
+}
+#endif
+
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
@@ -994,6 +1198,7 @@ int main(int argc, char **argv) {
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
     if (gpu_enabled) install_lua_hook(segments, ns);
 #ifdef _WIN32
+    if (gpu_enabled) install_bind_guard(segments, ns);
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif
     if (isa_table) {
