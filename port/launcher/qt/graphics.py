@@ -21,6 +21,7 @@ SETTING_ROWS = {
     's:frame_rate': ('frame_rate', 'combo', False),
     's:gpu_readbacks': ('gpu_readbacks', 'combo', False),
     's:native_audio': ('native_audio', 'switch', False),
+    's:skip_logos': ('skip_logos', 'switch', False),
     's:close_on_play': ('close_on_play', 'switch', False),
     's:reopen_launcher': ('reopen_launcher', 'switch', False),
     's:level_select': ('level_select', 'switch', False),
@@ -44,7 +45,7 @@ SECTIONS = (
                      'TLG_DIRECT_MEMORY_ACCESS')),
     ('gfx_sec_vram', ('s:vram_budget_mb',)),
     ('gfx_sec_overlay', ('s:show_fps',) + OVERLAY_IDS),
-    ('gfx_sec_launcher', ('s:native_audio', 's:close_on_play', 's:reopen_launcher')),
+    ('gfx_sec_launcher', ('s:native_audio', 's:skip_logos', 's:close_on_play', 's:reopen_launcher')),
     ('gfx_sec_debug', ('s:level_select', 's:bridge_fix')),
 )
 # Sliders greyed out while the switch they belong to is off.
