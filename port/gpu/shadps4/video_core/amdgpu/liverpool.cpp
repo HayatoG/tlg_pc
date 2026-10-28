@@ -25,6 +25,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "tlg_write_log.h"
 #include "video_core/amdgpu/pm4_cmds.h"
+#include "video_core/amdgpu/queued_commands.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
@@ -86,20 +87,24 @@ Liverpool::~Liverpool() {
 }
 
 void Liverpool::ProcessCommands() {
-    if (num_commands && rasterizer) {
-        rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCommands); // tlg: commands touch the caches
-    }
-    // Process incoming commands with high priority
-    while (num_commands) {
-        Common::UniqueFunction<void> callback{};
-        {
+    // A command can arrive after an empty-queue check. Draining once before the loop allowed
+    // that late readback to change buffer ranges before the recorder was done hashing them.
+    // Its first scheduler call then drained too late: stage B faulted on the same protected
+    // page while stage A waited for it. Drain before *each* callback touches cache state.
+    ProcessQueuedCommands(
+        [this] { return num_commands.load() != 0; },
+        [this] {
             std::scoped_lock lk{submit_mutex};
-            callback = std::move(command_queue.front());
+            auto callback = std::move(command_queue.front());
             command_queue.pop();
             --num_commands;
-        }
-        callback();
-    }
+            return callback;
+        },
+        [this] {
+            if (rasterizer) {
+                rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCommands);
+            }
+        });
 }
 
 void Liverpool::Process(std::stop_token stoken) {
