@@ -572,6 +572,129 @@ mismatch:
     printf("Lua hook: unavailable (code signature mismatch)\n");
 }
 
+#ifdef _WIN32
+/* Re-init lock (load crash #19, divide by zero at 0x149a1a0; TLG_REINIT_LOCK: 1 fix, the default;
+ * 0 off). The main thread's job update re-inits a buffer wrapper (0xe44a80 from 0xe60c0f or
+ * 0xe60dd2): its reset (0xe43620) drops the wrapper's node (+0x38) and clears its SRV/UAV bits
+ * (+0x5c & 0x10) and extra bind flags (+0x60); the caller puts the flags back only after the
+ * re-init returns (0xe60c1e, 0xe60de1). A render-thread consume (0xee5130) that refreshes the job
+ * in that gap finds no node and builds one (0xc45170) from the half state: the buffer gets no
+ * STRUCTURED flag while the view keeps the structured format 0, and the view create (0x14999e0)
+ * divides by an element size of 0. Failing that view is no fix: the consume then stores the
+ * missing node and reads it (0xee6f01). So both sides take one lock, as the game's own source would
+ * have to: the job update from the re-init call until the flags are back, each of the consume's 8
+ * node builds from the build until the node is stored (the call to 0xe44c50 right after). Re-inits
+ * and node builds happen at loads, so the lock is almost never contended; a wait over 1 s goes on
+ * without the lock and says so, so it can never hang the game. */
+static uint32_t reinit_owner;   /* thread id holding the lock, 0 = free */
+static unsigned reinit_depth;   /* nested takes by the owner */
+static int64_t reinit_waits;
+
+static ABI void reinit_lock(void) {
+    const uint32_t self = (uint32_t)GetCurrentThreadId();
+    if (__atomic_load_n(&reinit_owner, __ATOMIC_RELAXED) == self) {
+        ++reinit_depth;
+        return;
+    }
+    uint64_t start = 0;
+    for (unsigned spin = 0;; ++spin) {
+        uint32_t free_ = 0;
+        if (__atomic_compare_exchange_n(&reinit_owner, &free_, self, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) break;
+        if (spin < 100) {
+            __builtin_ia32_pause();
+            continue;
+        }
+        if (!start) start = GetTickCount64();
+        const uint64_t waited = GetTickCount64() - start;
+        if (waited > 1000) {
+            printf("Re-init lock: thread %u gave up after %" PRIu64 " ms (held by thread %u), going on without it\n",
+                   self, waited, __atomic_load_n(&reinit_owner, __ATOMIC_RELAXED));
+            return;
+        }
+        Sleep(spin < 1000 ? 0 : 1);
+    }
+    if (!start) return;
+    const int64_t n = __atomic_add_fetch(&reinit_waits, 1, __ATOMIC_RELAXED);
+    if (n <= 20 || !(n % 100))
+        printf("Re-init lock: thread %u waited %" PRIu64 " ms for a buffer re-init (%" PRId64 " so far)\n", self,
+               GetTickCount64() - start, n);
+}
+static ABI void reinit_unlock(void) {
+    if (__atomic_load_n(&reinit_owner, __ATOMIC_RELAXED) != (uint32_t)GetCurrentThreadId()) return;   /* gave up */
+    if (reinit_depth) {
+        --reinit_depth;
+        return;
+    }
+    __atomic_store_n(&reinit_owner, 0, __ATOMIC_RELEASE);
+}
+/* push the 6 argument registers; sub rsp, 8; movabs rax, hook; call rax; add rsp, 8; pop them;
+ * movabs rax, next; jmp rax (entered by the site's call, so next sees the site's arguments) */
+static void reinit_stub(unsigned char *stub, uintptr_t hook, uintptr_t next) {
+    static const unsigned char body[48] = {0x57, 0x56, 0x52, 0x51, 0x41,0x50, 0x41,0x51, 0x48,0x83,0xec,0x08,
+        0x48,0xb8, 0,0,0,0,0,0,0,0, 0xff,0xd0, 0x48,0x83,0xc4,0x08, 0x41,0x59, 0x41,0x58, 0x59, 0x5a, 0x5e, 0x5f,
+        0x48,0xb8, 0,0,0,0,0,0,0,0, 0xff,0xe0};
+    memcpy(stub, body, sizeof(body));
+    memcpy(stub + 14, &hook, 8);
+    memcpy(stub + 38, &next, 8);
+}
+static void install_reinit_lock(Segment *segments, uint64_t count) {
+    const char *mode = getenv("TLG_REINIT_LOCK");
+    if (mode && !strtoul(mode, NULL, 0)) return;
+    /* each site is a call: stubs 0 and 1 take the lock and go on to the call's target, stub 2
+     * releases it first */
+    static const struct { uint64_t site, target; unsigned stub; } calls[] = {
+        {0xe60c0f, 0xe44a80, 0}, {0xe60dd2, 0xe44a80, 0},   /* job update: the re-init */
+        {0xee5240, 0xc45170, 1}, {0xee64d0, 0xc45170, 1}, {0xee6660, 0xc45170, 1}, {0xee67f0, 0xc45170, 1},
+        {0xee6975, 0xc45170, 1}, {0xee6af5, 0xc45170, 1}, {0xee6c75, 0xc45170, 1}, {0xee6df3, 0xc45170, 1},
+        {0xee525c, 0xe44c50, 2}, {0xee64ee, 0xe44c50, 2}, {0xee667e, 0xe44c50, 2}, {0xee680e, 0xe44c50, 2},
+        {0xee6993, 0xe44c50, 2}, {0xee6b13, 0xe44c50, 2}, {0xee6c93, 0xe44c50, 2}, {0xee6e11, 0xe44c50, 2}};
+    /* job update: or [r12+0x5c], ebx (the flags back), made a call to stub 3 */
+    static const unsigned char flags_back[5] = {0x41,0x09,0x5c,0x24,0x5c};
+    static const uint64_t restores[2] = {0xe60c1e, 0xe60de1};
+    const unsigned ncalls = sizeof(calls) / sizeof(calls[0]);
+    for (unsigned i = 0; i < ncalls; ++i) {
+        int32_t relative;
+        if (!mapped(segments, count, calls[i].site, 5) || image[calls[i].site] != 0xe8) goto mismatch;
+        memcpy(&relative, image + calls[i].site + 1, 4);
+        if (calls[i].site + 5 + (int64_t)relative != calls[i].target) goto mismatch;
+    }
+    for (unsigned i = 0; i < 2; ++i)
+        if (!mapped(segments, count, restores[i], 5) || memcmp(image + restores[i], flags_back, 5)) goto mismatch;
+    unsigned char *stub = allocate(page_size);
+    reinit_stub(stub, (uintptr_t)reinit_lock, (uintptr_t)image + 0xe44a80);
+    reinit_stub(stub + 64, (uintptr_t)reinit_lock, (uintptr_t)image + 0xc45170);
+    reinit_stub(stub + 128, (uintptr_t)reinit_unlock, (uintptr_t)image + 0xe44c50);
+    /* or [r12+0x5c], ebx; push rax, rcx, rdx, rsi, rdi, r8-r11; movabs rax, unlock; call rax; pop them;
+     * ret (the code after only overwrites the flags) */
+    static const unsigned char back[44] = {0x41,0x09,0x5c,0x24,0x5c, 0x50, 0x51, 0x52, 0x56, 0x57, 0x41,0x50,
+        0x41,0x51, 0x41,0x52, 0x41,0x53, 0x48,0xb8, 0,0,0,0,0,0,0,0, 0xff,0xd0, 0x41,0x5b, 0x41,0x5a, 0x41,0x59,
+        0x41,0x58, 0x5f, 0x5e, 0x5a, 0x59, 0x58, 0xc3};
+    const uintptr_t unlock = (uintptr_t)reinit_unlock;
+    memcpy(stub + 192, back, sizeof(back));
+    memcpy(stub + 212, &unlock, 8);
+    for (unsigned i = 0; i < ncalls + 2; ++i) {
+        const uint64_t site = i < ncalls ? calls[i].site : restores[i - ncalls];
+        const int64_t delta = (int64_t)(uintptr_t)(stub + 64 * (i < ncalls ? calls[i].stub : 3)) -
+                              (int64_t)(uintptr_t)(image + site + 5);
+        if (delta < INT32_MIN || delta > INT32_MAX) {
+            printf("Re-init lock: unavailable (outside relative-call range)\n");
+            return;
+        }
+    }
+    protect(stub, page_size, 5);
+    for (unsigned i = 0; i < ncalls + 2; ++i) {
+        const uint64_t site = i < ncalls ? calls[i].site : restores[i - ncalls];
+        const int32_t relative = (int32_t)((int64_t)(uintptr_t)(stub + 64 * (i < ncalls ? calls[i].stub : 3)) -
+                                           (int64_t)(uintptr_t)(image + site + 5));
+        image[site] = 0xe8;
+        memcpy(image + site + 1, &relative, 4);
+    }
+    printf("Re-init lock: ready\n");
+    return;
+mismatch:
+    printf("Re-init lock: unavailable (code signature mismatch)\n");
+}
+#endif
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap
  * function pointers): the patch holds the address at the patches' base, rebased here. */
@@ -993,6 +1116,9 @@ int main(int argc, char **argv) {
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
     if (gpu_enabled) install_lua_hook(segments, ns);
+#ifdef _WIN32
+    if (gpu_enabled) install_reinit_lock(segments, ns);
+#endif
 #ifdef _WIN32
     printf("Guest TCB loads redirected to the TEB TLS slot: %" PRIu64 "\n", patch_tcb_loads(segments, ns));
 #endif
