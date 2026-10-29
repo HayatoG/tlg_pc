@@ -172,6 +172,29 @@ private:
     Buffer gds_buffer;
     RangeSet gpu_modified_ranges;
 
+
+    /// tlg: one bit per 4 KiB guest page that really holds not-yet-downloaded GPU buffer
+    /// bytes. The page tracker's GPU bits cover whole pages and whole download windows, so
+    /// they stay set on pages with nothing left to download; a guest write fault on such a
+    /// page can skip the round trip through the GPU thread (default off, no measured gain;
+    /// TLG_RB_FALSESHARE=1 enables).
+    /// Kept conservative: set (whole pages, before the tracker flags them) at every written
+    /// binding, cleared only for pages fully inside a downloaded or dropped range.
+    static constexpr u64 ExactPageShift = 12;
+    static constexpr u64 ExactPageWords = (u64{1} << (ADDRESS_SPACE_BITS - ExactPageShift)) / 64;
+    std::unique_ptr<std::atomic<u64>[]> exact_write_pages;
+    void SetExactWritePages(VAddr addr, u64 size);
+    void ClearExactWritePagesInner(VAddr addr, u64 size);
+    [[nodiscard]] bool AnyExactWritePage(VAddr addr, u64 size) const;
+
+    /// tlg: copies GPU data whose last write has finished on the second queue, without
+    /// submitting or waiting for the open GPU queue. False when there is no second queue.
+    bool CopyOnReadbackQueue(const Buffer* arena, const Buffer* dst,
+                             std::span<const vk::BufferCopy> copies, u64 last_write);
+    vk::UniqueCommandPool readback_pool;
+    vk::CommandBuffer readback_cmdbuf;
+    vk::UniqueFence readback_fence;
+
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;
 

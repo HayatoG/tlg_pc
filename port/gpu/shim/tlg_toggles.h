@@ -85,6 +85,7 @@ inline bool Disabled(std::uint64_t bit) {
 /// The second mask (second number in TLG_TOGGLE_FILE): the first one has no free bits left.
 enum : std::uint64_t {
     ShaderCodeBacking = 1, ///< per-draw shader code reads through the backing view
+    ReadbackSideQueue = 2, ///< readbacks of finished GPU writes copy on the second queue
     ImageHashBacking = 32, ///< texture change hashes read through the backing view
 };
 inline bool Disabled2(std::uint64_t bit) {
