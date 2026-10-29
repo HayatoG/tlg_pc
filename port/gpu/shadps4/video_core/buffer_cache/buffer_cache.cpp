@@ -493,6 +493,7 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         .memoryTypeIndex = arena_memory_type_index,
     };
     const auto device_memory = Vulkan::Check(instance.GetDevice().allocateMemory(alloc_info));
+    TlgStats::arena_resident_bytes.fetch_add(alloc_info.allocationSize, std::memory_order_relaxed);
 
     boost::container::small_vector<vk::BufferCopy, 8> copies;
     const auto staging =

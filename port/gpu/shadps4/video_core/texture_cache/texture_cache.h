@@ -309,7 +309,8 @@ public:
         using FuncReturn = typename std::invoke_result<Func, ImageId, Image&>::type;
         static constexpr bool BOOL_BREAK = std::is_same_v<FuncReturn, bool>;
         ImageIds images;
-        ForEachPage(cpu_addr, size, [this, &images, cpu_addr, size, func](u64 page) {
+        u64 candidates = 0;
+        ForEachPage(cpu_addr, size, [this, &images, &candidates, cpu_addr, size, func](u64 page) {
             const auto it = page_table.find(page);
             if (it == nullptr) {
                 if constexpr (BOOL_BREAK) {
@@ -318,6 +319,7 @@ public:
                     return;
                 }
             }
+            candidates += it->size();
             for (const ImageId image_id : *it) {
                 Image& image = slot_images[image_id];
                 if (image.flags & ImageFlagBits::Picked) {
@@ -342,6 +344,10 @@ public:
         });
         for (const ImageId image_id : images) {
             slot_images[image_id].flags &= ~ImageFlagBits::Picked;
+        }
+        if (TlgStats::enabled) {
+            TlgStats::region_lookups.fetch_add(1, std::memory_order_relaxed);
+            TlgStats::region_candidates.fetch_add(candidates, std::memory_order_relaxed);
         }
     }
 
@@ -414,6 +420,7 @@ private:
     }
 
     void GarbageCollectImages();
+    void ReportMemory();
     void GarbageCollectSamplers();
 
 private:
@@ -434,7 +441,11 @@ private:
     std::atomic<bool> has_download_images{false};
     u64 total_used_memory = 0;
     u64 gc_evictions = 0, gc_downloads = 0; ///< tlg: pressure report
+    /// tlg: collector counters for the memory report (TLG_FRAME_STATS): passes past the trigger,
+    /// images walked, skipped (tiled GPU-written; write-back waits for pressure) and freed.
+    u64 gc_passes = 0, gc_walked = 0, gc_skip_tiled = 0, gc_skip_unpressured = 0, gc_freed = 0;
     std::chrono::steady_clock::time_point gc_report_time{};
+    std::chrono::steady_clock::time_point memory_report_time{}; ///< tlg: ReportMemory
     u64 trigger_gc_memory = 0;
     u64 pressure_gc_memory = 0;
     u64 critical_gc_memory = 0;
@@ -449,6 +460,19 @@ private:
     const bool deferred_readbacks = [] {
         const char* value = std::getenv("TLG_DEFERRED_READBACK");
         return value && value[0] == '1';
+    }();
+    /// tlg: TLG_GC_FIX bits, both on by default (3); TLG_GC_FIX=0 brings the old collector back
+    /// for A/B runs. 1: the collector's queue walk stops when the pass is done
+    /// (Common::lru_stop_early). 2: images the collector cannot free move to the back of the
+    /// queue and no longer use up the pass, at most 256 visited per pass (same fix as
+    /// HayatoG/iss_pc 520b235 and deadinside28/bloodborne_pc 4d4d208). Issue #104: without them
+    /// the collector freed almost nothing and stale images piled up in the page table, slowing
+    /// every texture lookup. Budget 5000, s04_FirstAntenna _090_GardenTerrace_001 in a fresh
+    /// process vs after 15 stage jumps: 69.0 -> 58.0 FPS (130k images cached, ~62 looked at per
+    /// lookup); with them 67.8 -> 67.4 FPS (6k images, ~5 per lookup).
+    const u32 gc_fix = [] {
+        const char* value = std::getenv("TLG_GC_FIX");
+        return value ? static_cast<u32>(std::strtoul(value, nullptr, 10)) : 3u;
     }();
     /// tlg: TLG_GC_BATCH_DOWNLOAD=1: the collector records the copies of all GPU-written images
     /// it evicts and waits for the GPU once, instead of once per image (GarbageCollectImages).
