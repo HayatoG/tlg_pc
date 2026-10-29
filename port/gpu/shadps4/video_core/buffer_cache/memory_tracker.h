@@ -62,6 +62,26 @@ public:
                             });
     }
 
+    /// tlg: unmark GPU state only where `clean(addr, size)` holds, decided under the region
+    /// lock so a concurrent marking (which flags its pages before it takes the lock) is never
+    /// lost. Returns true when every page in range was unmarked.
+    template <typename Pred>
+    bool UnmarkGpuIfClean(VAddr addr, u64 query_size, Pred&& clean) noexcept {
+        bool all_clean = true;
+        IteratePages<false>(addr, query_size,
+                            [&](RegionManager* manager, u64 offset, size_t size) {
+                                std::scoped_lock lk{manager->lock};
+                                const VAddr sub_addr = manager->GetCpuAddr() + offset;
+                                if (!clean(sub_addr, size)) {
+                                    all_clean = false;
+                                    return;
+                                }
+                                manager->template ChangeRegionState<Type::GPU, false>(sub_addr,
+                                                                                      size);
+                            });
+        return all_clean;
+    }
+
     /// Unmark region as modified from the host GPU
     void UnmarkRegionAsGpuModified(VAddr dirty_cpu_addr, u64 query_size) noexcept {
         IteratePages<false>(dirty_cpu_addr, query_size,

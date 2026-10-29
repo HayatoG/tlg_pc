@@ -449,10 +449,14 @@ bool Instance::CreateDevice() {
         return false;
     }
 
-    static constexpr std::array queue_priorities = {1.0f};
+    // tlg: a second queue of the graphics family, when it has one, for buffer readbacks that
+    // must not wait for the open GPU queue (BufferCache::DownloadMemory).
+    static constexpr std::array queue_priorities = {1.0f, 1.0f};
+    const u32 queue_count = family_properties[queue_family_index].queueCount >= 2 ? 2u : 1u;
+    has_readback_queue = queue_count == 2;
     const vk::DeviceQueueCreateInfo queue_info = {
         .queueFamilyIndex = queue_family_index,
-        .queueCount = static_cast<u32>(queue_priorities.size()),
+        .queueCount = queue_count,
         .pQueuePriorities = queue_priorities.data(),
     };
 
@@ -704,6 +708,9 @@ bool Instance::CreateDevice() {
 
     graphics_queue = device->getQueue(queue_family_index, 0);
     present_queue = device->getQueue(queue_family_index, 0);
+    if (has_readback_queue) {
+        readback_queue = device->getQueue(queue_family_index, 1);
+    }
 
     if (calibrated_timestamps) {
         const auto [time_domains_result, time_domains] =

@@ -85,6 +85,7 @@ inline bool Disabled(std::uint64_t bit) {
 /// The second mask (second number in TLG_TOGGLE_FILE): the first one has no free bits left.
 enum : std::uint64_t {
     ShaderCodeBacking = 1, ///< per-draw shader code reads through the backing view
+    ReadbackSideQueue = 2, ///< readbacks of finished GPU writes copy on the second queue
     ImageHashBacking = 32, ///< texture change hashes read through the backing view
 };
 inline bool Disabled2(std::uint64_t bit) {
@@ -153,4 +154,12 @@ inline std::atomic<std::uint64_t> gpu_signal_faults{0};
 /// Protection changes: calls and pages, those removing write access (TLB shootdowns) apart.
 inline std::atomic<std::uint64_t> protect_calls{0}, protect_pages{0}, protect_revoke_calls{0},
     protect_revoke_pages{0};
+/// Video memory by owner, for the memory report (TLG_FRAME_STATS): Vulkan images by creator, and
+/// the device memory backing the sparse buffer arenas (made resident, never freed).
+enum ImageOwner : std::uint8_t { OwnerHost, OwnerTextureCache, OwnerScene, OwnerPack, ImageOwners };
+inline std::atomic<std::int64_t> image_bytes[ImageOwners]{}, image_count[ImageOwners]{};
+inline std::atomic<std::uint64_t> arena_resident_bytes{0};
+/// Texture cache region lookups (ForEachImageInRegion) and the images they looked at, for the
+/// memory report: stale images in the page table make every lookup slower.
+inline std::atomic<std::uint64_t> region_lookups{0}, region_candidates{0};
 } // namespace TlgStats
