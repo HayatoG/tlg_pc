@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
 #include <span>
+#include <thread>
 
 #include <boost/container/small_vector.hpp>
 #include <boost/container/static_vector.hpp>
@@ -21,6 +23,27 @@ Pipeline::Pipeline(const Instance& instance_, Scheduler& scheduler_, DescriptorH
       is_compute{is_compute_} {}
 
 Pipeline::~Pipeline() = default;
+
+bool RetryPipelineCreation(vk::Result result, u32 attempt, std::string_view kind,
+                           std::string_view debug_str) {
+    if (result != vk::Result::eErrorUnknown || attempt > 8) {
+        return false;
+    }
+    LOG_WARNING(Render_Vulkan,
+                "tlg: {} pipeline {} failed with VK_ERROR_UNKNOWN (attempt {}/8), retrying",
+                kind, debug_str, attempt);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50 * attempt));
+    return true;
+}
+
+vk::Pipeline Pipeline::BuiltHandle() const {
+    if (!build) {
+        return *pipeline;
+    }
+    std::unique_lock lock{build->mutex};
+    build->cv.wait(lock, [this] { return build->done.load(std::memory_order_acquire); });
+    return *build->result;
+}
 
 
 void Pipeline::BindResources(DescriptorWrites& set_writes,

@@ -256,6 +256,32 @@ public:
         return vk13_features.subgroupSizeControl && vk13_props.maxSubgroupSize >= 64;
     }
 
+    /// tlg: the stages the driver accepts a required subgroup size on.
+    vk::ShaderStageFlags RequiredSubgroupSizeStages() const {
+        return vk13_props.requiredSubgroupSizeStages;
+    }
+
+    u32 MinSubgroupSize() const {
+        return vk13_props.minSubgroupSize;
+    }
+
+    u32 MaxSubgroupSize() const {
+        return vk13_props.maxSubgroupSize;
+    }
+
+    /// tlg: true when this stage may be created with a required subgroup size of 64.
+    /// Avoids VUID-VkPipelineShaderStageCreateInfo-pNext-02755 on AMD RDNA2/RDNA3 graphics stages.
+    bool IsRequiredSubgroupSize64ValidFor(vk::ShaderStageFlagBits stage) const {
+        return IsSubgroupSize64Supported() && bool(vk13_props.requiredSubgroupSizeStages & stage);
+    }
+
+    /// tlg: the subgroup size a compute pipeline runs at (64 when supported for compute).
+    u32 ComputeSubgroupSize() const {
+        return IsRequiredSubgroupSize64ValidFor(vk::ShaderStageFlagBits::eCompute)
+                   ? 64u
+                   : vk11_props.subgroupSize;
+    }
+
     /// Returns true when VK_KHR_workgroup_memory_explicit_layout is supported.
     bool IsWorkgroupMemoryExplicitLayoutSupported() const {
         return workgroup_memory_explicit_layout &&
@@ -371,6 +397,11 @@ public:
     /// Returns the subgroup size of the selected physical device.
     u32 SubgroupSize() const {
         return vk11_props.subgroupSize;
+    }
+
+    /// tlg: VK_EXT_pipeline_creation_cache_control (core in Vulkan 1.3).
+    bool IsPipelineCreationCacheControlSupported() const {
+        return vk13_features.pipelineCreationCacheControl;
     }
 
     /// Returns the maximum size of compute shared memory.
