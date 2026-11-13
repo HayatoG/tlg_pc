@@ -331,7 +331,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .max_viewport_height = instance.GetMaxViewportHeight(),
         .max_shared_memory_size = instance.MaxComputeSharedMemorySize(),
         .supported_spirv = SpirvVersion1_6,
-        .subgroup_size = instance.SubgroupSize(),
+        .subgroup_size = instance.ComputeSubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
@@ -675,14 +675,12 @@ bool PipelineCache::AsyncCompilation() const {
 }
 
 void PipelineCache::SeedWorkerCaches() {
-    if (!compiler || worker_caches_seeded) {
-        return;
-    }
     for (const auto& cache : worker_pipeline_caches) {
         const auto result = instance.GetDevice().mergePipelineCaches(*cache, *pipeline_cache);
-        ASSERT_MSG(result == vk::Result::eSuccess, "Failed to seed compiler pipeline cache");
+        ASSERT_MSG(result == vk::Result::eSuccess, "Failed to seed compiler pipeline cache: {}",
+                   vk::to_string(result));
     }
-    worker_caches_seeded = true;
+    std::printf("Pipeline cache: compiler worker caches seeded\n");
 }
 
 void PipelineCache::ReportCompilerStats() {
@@ -738,7 +736,6 @@ const GraphicsPipeline* PipelineCache::TryPreparedPipeline(const PreparedDraw& p
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectParams params,
                                                            const PreparedDraw* prepared) {
-    SeedWorkerCaches();
     PublishShaders();
     PublishGraphics();
     PumpWarmUp();
@@ -762,6 +759,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             return found->second.get();
         }
         if (!pending_graphics.contains(sel.graphics_key) && compiler->HasCapacity()) {
+            worker_cache_seed.Ensure(true, [this] { SeedWorkerCaches(); });
             PhaseTimer capture{g_tlg_snapshot_ns};
             auto build = std::make_shared<AsyncGraphicsCompilation>();
             build->selection = sel;
@@ -835,9 +833,12 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         CompileTimer timer;
 
         ComputePipeline::SerializationSupport sdata{};
+        const ComputeBuilder builder{compiler.get(), worker_pipeline_caches};
+        const bool async = compiler && !EmulatorSettings.IsShaderCollect();
         it.value() = std::make_unique<ComputePipeline>(instance, scheduler, desc_heap, profile,
                                                        *pipeline_cache, compute_key, *sel.infos[0],
-                                                       sel.modules[0], sdata, false);
+                                                       sel.modules[0], sdata, false,
+                                                       async ? &builder : nullptr);
         RegisterPipelineData(compute_key, sdata);
         ++num_new_pipelines;
 
@@ -845,6 +846,8 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
             auto& m = sel.modules[0];
             module_related_pipelines[m].emplace_back(compute_key);
         }
+    } else if (it->second) {
+        it.value()->SwapInOptimized();
     }
     return it->second.get();
 }
