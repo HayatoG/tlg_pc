@@ -96,28 +96,16 @@ PATCHES = {
          'cloth update null table/element guard at 0x28c161..0x28c1a4'),
     ],
     # Experimental tail / fur climbing fix (DynamicsHang + DeformableBridge, opt-in):
-    # Prevents DeformableBridge::SolveMove (0x82df40) from aborting/zeroing climb steps when
-    # a single ray hits or step > segment length, enables movement fallback in normal climb state,
-    # and suppresses 1-frame m_failure / Hang_RagdollTurnAwayElapsedTime grip drops on moving fur.
+    # Allows DeformableBridge::SolveMove (0x82df40) to accept 1+ hit probe and clamp steps
+    # along the bridge segment without overriding off-mesh boundary checks in PostSolve,
+    # and relaxes sharp fur-twist slide / ragdoll turn-away thresholds on a moving tail.
     'tail_climb_fix': [
         (0x182e113, bytes.fromhex('83fa020f85ca010000'), bytes.fromhex('85d2900f84ca010000'),
          'DeformableBridge::SolveMove: accept 1+ hit ray instead of requiring 2'),
         (0x182e11c, bytes.fromhex('c5f82e470c0f864f030000'), bytes.fromhex('9090909090e95003000090'),
          'DeformableBridge::SolveMove: clamp step to bridge endpoint instead of zeroing delta'),
-        (0x181bc58, bytes.fromhex('c7833c02000001000000'), bytes.fromhex('c7833c02000000000000'),
-         'DynamicsHang::PostSolve: clear m_failure when SolveMove returns 2'),
-        (0x181bc75, bytes.fromhex('7578'), bytes.fromhex('9090'),
-         'DynamicsHang::PostSolve: enable fallback movement delta in normal climb state'),
-        (0x181bcd2, bytes.fromhex('c7834002000001000000'), bytes.fromhex('c7834002000000000000'),
-         'DynamicsHang::PostSolve: keep m_isExceedsSlipRange = 0 on fallback'),
-        (0x181bce5, bytes.fromhex('c7833c02000001000000'), bytes.fromhex('c7833c02000000000000'),
-         'DynamicsHang::PostSolve: keep m_failure = 0 on fallback'),
-        (0x181bed5, bytes.fromhex('c7833c02000001000000'), bytes.fromhex('c7833c02000000000000'),
-         'DynamicsHang::PostSolve: prevent 1-frame SolvePoint miss from triggering m_failure'),
         (0x18179f9, bytes.fromhex('7612'), bytes.fromhex('eb12'),
          'DynamicsHang::SlideMovePosDelta: do not discard sharp-angle slide on twisting fur'),
-        (0x1817b67, bytes.fromhex('41c7854402000000000000'), bytes.fromhex('41c7854402000001000000'),
-         'DynamicsHang::SlideMovePosDelta: keep m_isMoveable = 1'),
         (0x181d390, bytes.fromhex('7624'), bytes.fromhex('eb24'),
          'DynamicsHang::Update: reset Hang_RagdollTurnAwayElapsedTime to 0 on whipping tail'),
     ],
