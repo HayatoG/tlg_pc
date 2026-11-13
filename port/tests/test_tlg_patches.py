@@ -77,7 +77,7 @@ class FrameRatePatchTests(unittest.TestCase):
             applied, lines = t.prepare(tmp, tmp, '30', tail_climb_fix=True)
             blob = Path(tmp, 'patches.bin').read_bytes()
         self.assertEqual(applied, '30')
-        self.assertEqual(struct.unpack_from('<8sQQ', blob), (b'G3PATCH2', 0, 5))
+        self.assertEqual(struct.unpack_from('<8sQQ', blob), (b'G3PATCH2', 0, 10))
         self.assertTrue(any('Tail climb fix patch' in line for line in lines))
 
     def test_tail_climb_fix_skips_unexpected_bytes(self):

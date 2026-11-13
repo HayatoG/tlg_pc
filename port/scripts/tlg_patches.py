@@ -98,8 +98,11 @@ PATCHES = {
     # Experimental tail / fur climbing fix (DynamicsHang + DeformableBridge, opt-in):
     # Allows DeformableBridge::SolveMove (0x82df40) and SolvePoint (0x82efc0) to accept 1+
     # hit ray instead of requiring 100% ray agreement on a thin whipping tail (while still
-    # failing on 0 hits / empty air so PostSolve stops climbing at fur edges), clamps steps
-    # to valid bridge nodes, and relaxes sharp fur-twist slide / ragdoll turn-away checks.
+    # failing on 0 hits / empty air so PostSolve stops climbing at fur edges), preserves
+    # previous orientation without flagging m_failure when SolvePoint hits 1+ ray without
+    # forming a complete matched pair, guards missed-ray node indexing in SolvePoint,
+    # clamps movement steps to valid bridge nodes, and relaxes sharp fur-twist slide /
+    # ragdoll turn-away checks.
     'tail_climb_fix': [
         (0x182e113, bytes.fromhex('83fa020f85ca010000'), bytes.fromhex('85d2900f84ca010000'),
          'DeformableBridge::SolveMove: accept 1+ hit ray instead of requiring 2'),
@@ -107,6 +110,16 @@ PATCHES = {
          'DeformableBridge::SolveMove: clamp step to bridge endpoint instead of zeroing delta'),
         (0x182f0c2, bytes.fromhex('39c80f85b7080000'), bytes.fromhex('85c00f84b7080000'),
          'DeformableBridge::SolvePoint: accept 1+ hit ray instead of requiring 2*N (0 hits still fails)'),
+        (0x182f255, bytes.fromhex('0f840e010000'), bytes.fromhex('0f8455010000'),
+         'DeformableBridge::SolvePoint: skip sample copy when a missed ray has 0 nodes'),
+        (0x182f3a4, bytes.fromhex('6666662e0f1f840000000000'), bytes.fromhex('b302e9d60500000f1f440000'),
+         'DeformableBridge::SolvePoint: return 2 for partial hits without a matched pair'),
+        (0x182f74b, bytes.fromhex('0f8430020000'), bytes.fromhex('0f8453fcffff'),
+         'DeformableBridge::SolvePoint: branch partial-hit exit instead of returning 0 failure'),
+        (0x181bdf4, bytes.fromhex('85c00f84d9000000'), bytes.fromhex('ffc80f85d9000000'),
+         'DynamicsHang::PostSolve: dispatch SolvePoint == 2 partial-hit code'),
+        (0x181bed5, bytes.fromhex('c7833c02000001000000eb3e'), bytes.fromhex('7948f7d889833c020000eb3e'),
+         'DynamicsHang::PostSolve: keep orientation without setting Hang_IsFailure on partial SolvePoint hit'),
         (0x18179f9, bytes.fromhex('7612'), bytes.fromhex('eb12'),
          'DynamicsHang::SlideMovePosDelta: do not discard sharp-angle slide on twisting fur'),
         (0x181d390, bytes.fromhex('7624'), bytes.fromhex('eb24'),
