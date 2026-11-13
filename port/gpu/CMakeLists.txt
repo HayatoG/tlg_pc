@@ -314,6 +314,17 @@ if (WIN32)
 endif()
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.
+if (WIN32)
+    add_executable(renderer-guard-test EXCLUDE_FROM_ALL ../tests/test_renderer_guard.c)
+    target_include_directories(renderer-guard-test PRIVATE ../src)
+    target_compile_options(renderer-guard-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+    add_executable(format-guard-test EXCLUDE_FROM_ALL ../tests/test_format_guard.c)
+    target_include_directories(format-guard-test PRIVATE ../src)
+    target_compile_options(format-guard-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+    add_executable(lazy-pipeline-seed-test EXCLUDE_FROM_ALL ../tests/test_lazy_pipeline_seed.cpp)
+    target_include_directories(lazy-pipeline-seed-test PRIVATE shadps4/video_core/renderer_vulkan)
+    target_compile_options(lazy-pipeline-seed-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+endif()
 add_executable(pipeline-binary-cache-test EXCLUDE_FROM_ALL ../tests/test_pipeline_binary_cache.cpp
     ../tests/test_gpu_runtime_stubs.cpp)
 target_compile_definitions(pipeline-binary-cache-test PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

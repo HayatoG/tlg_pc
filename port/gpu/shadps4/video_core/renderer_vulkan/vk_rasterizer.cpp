@@ -836,7 +836,7 @@ void Rasterizer::RetireSubmission() {
 }
 
 bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle) {
-    if (!UseDrawPipe() || TlgToggle::Disabled(toggle)) {
+    if (!UseDrawPipe() || (toggle && TlgToggle::Disabled(toggle))) {
         DrainDrawPipe(DrawPipe::ReasonRasterizer);
         task(*this, static_cast<const u8*>(data));
         return false;
@@ -846,6 +846,23 @@ bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 to
     *reinterpret_cast<TaskPacket*>(out) = {PacketKind::Task, size, task};
     std::memcpy(out + sizeof(TaskPacket), data, size);
     draw_pipe->Commit(total);
+    return true;
+}
+
+namespace {
+void RunCommandTask(Rasterizer&, const u8* data) {
+    auto* command = *reinterpret_cast<Common::UniqueFunction<void>* const*>(data);
+    (*command)();
+    delete command;
+}
+} // namespace
+
+bool Rasterizer::RunCommandInOrder(Common::UniqueFunction<void>&& command) {
+    if (!UseDrawPipe() || !OnStageA() || TlgToggle::Disabled2(TlgToggle::PipelinedCommands)) {
+        return false;
+    }
+    auto* heap = new Common::UniqueFunction<void>(std::move(command));
+    RunInOrder(&RunCommandTask, &heap, sizeof(heap), 0);
     return true;
 }
 

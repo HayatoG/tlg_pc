@@ -5,6 +5,7 @@
 
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
+#include "common/unique_function.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/vk_bind_helper.h"
@@ -52,6 +53,11 @@ public:
 
     [[nodiscard]] VideoCore::TextureCache& GetTextureCache() noexcept {
         return texture_cache;
+    }
+
+    /// tlg: see BufferCache::EagerCopyAtFence (fence packets, before the guest sees them).
+    void EagerCopyAtFence() {
+        buffer_cache.EagerCopyAtFence();
     }
 
     void Draw(bool is_indexed, u32 index_offset = 0, const PreparedDraw* prepared = nullptr);
@@ -103,6 +109,9 @@ public:
     /// Returns true when the task was handed to the recording thread (not run yet).
     bool RunInOrder(OrderedTask task, const void* data, u32 size,
                     u64 toggle = TlgToggle::PipelinedTasks);
+    /// tlg: sends an arbitrary GPU-thread command (SendCommand<_, true>) to the draw pipe when
+    /// recording on stage A, so it runs without waiting to drain draws before it. Returns true if handled.
+    bool RunCommandInOrder(Common::UniqueFunction<void>&& command);
     /// Stage A: the draw pipe position after the last handed-over packet, and whether the
     /// recording thread has run everything before a position.
     [[nodiscard]] u64 DrawPipeHead() const {

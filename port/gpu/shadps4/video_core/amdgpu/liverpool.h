@@ -131,16 +131,18 @@ public:
         rasterizer = rasterizer_;
     }
 
-    template <bool wait_done = false>
+    template <bool wait_done = false, bool in_order = false>
     void SendCommand(auto&& func) {
         if constexpr (wait_done) {
             std::binary_semaphore sem{0};
             {
                 std::scoped_lock lk{submit_mutex};
-                command_queue.emplace([&sem, &func] {
-                    func();
-                    sem.release();
-                });
+                command_queue.emplace(
+                    [&sem, &func] {
+                        func();
+                        sem.release();
+                    },
+                    in_order);
                 ++num_commands;
                 submit_cv.notify_one();
             }
@@ -148,7 +150,7 @@ public:
             sem.acquire();
         } else {
             std::scoped_lock lk{submit_mutex};
-            command_queue.emplace(std::move(func));
+            command_queue.emplace(std::move(func), in_order);
             ++num_commands;
             submit_cv.notify_one();
         }
@@ -275,9 +277,13 @@ private:
     std::atomic<bool> work_retired{true};
     std::atomic<u32> num_commands{};
     std::atomic<bool> submit_done{};
+    struct Command {
+        Common::UniqueFunction<void> func;
+        bool in_order = false;
+    };
     std::mutex submit_mutex;
     std::condition_variable_any submit_cv;
-    std::queue<Common::UniqueFunction<void>> command_queue{};
+    std::queue<Command> command_queue{};
     std::thread::id gpu_id;
 #if defined(__linux__) || defined(_WIN32)
     u32 gpu_tid{};
