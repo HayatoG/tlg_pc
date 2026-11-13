@@ -70,6 +70,25 @@ class FrameRatePatchTests(unittest.TestCase):
         applied, lines, blob = self.prepare(b'', '30')
         self.assertEqual((applied, struct.unpack_from('<8sQQ', blob)), ('30', (b'G3PATCH2', 0, 0)))
 
+    def test_tail_climb_fix_is_opt_in(self):
+        eboot = self_dump(text_with(['tail_climb_fix']))
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, 'eboot.bin').write_bytes(eboot)
+            applied, lines = t.prepare(tmp, tmp, '30', tail_climb_fix=True)
+            blob = Path(tmp, 'patches.bin').read_bytes()
+        self.assertEqual(applied, '30')
+        self.assertEqual(struct.unpack_from('<8sQQ', blob), (b'G3PATCH2', 0, 10))
+        self.assertTrue(any('Tail climb fix patch' in line for line in lines))
+
+    def test_tail_climb_fix_skips_unexpected_bytes(self):
+        eboot = self_dump(text_with(['tail_climb_fix'], expected=False))
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, 'eboot.bin').write_bytes(eboot)
+            applied, lines = t.prepare(tmp, tmp, '30', tail_climb_fix=True)
+            blob = Path(tmp, 'patches.bin').read_bytes()
+        self.assertEqual((applied, struct.unpack_from('<8sQQ', blob)), ('30', (b'G3PATCH2', 0, 0)))
+        self.assertTrue(any(line.startswith('Tail climb fix:') and 'not applied' in line for line in lines))
+
 
 class ModTitleIdTests(unittest.TestCase):
     EU_XML = """<?xml version="1.0"?>

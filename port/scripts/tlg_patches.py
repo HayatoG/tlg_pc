@@ -95,6 +95,32 @@ PATCHES = {
          ),
          'cloth update null table/element guard at 0x28c161..0x28c1a4'),
     ],
+    # Experimental tail / fur climbing fix (DynamicsHang + DeformableBridge, opt-in):
+    # Prevents DeformableBridge::SolveMove (0x82df40) from aborting/zeroing climb steps when
+    # a single ray hits or step > segment length, enables movement fallback in normal climb state,
+    # and suppresses 1-frame m_failure / Hang_RagdollTurnAwayElapsedTime grip drops on moving fur.
+    'tail_climb_fix': [
+        (0x182e113, bytes.fromhex('83fa020f85ca010000'), bytes.fromhex('85d2900f84ca010000'),
+         'DeformableBridge::SolveMove: accept 1+ hit ray instead of requiring 2'),
+        (0x182e11c, bytes.fromhex('c5f82e470c0f864f030000'), bytes.fromhex('9090909090e95003000090'),
+         'DeformableBridge::SolveMove: clamp step to bridge endpoint instead of zeroing delta'),
+        (0x181bc58, bytes.fromhex('c7833c02000001000000'), bytes.fromhex('c7833c02000000000000'),
+         'DynamicsHang::PostSolve: clear m_failure when SolveMove returns 2'),
+        (0x181bc75, bytes.fromhex('7578'), bytes.fromhex('9090'),
+         'DynamicsHang::PostSolve: enable fallback movement delta in normal climb state'),
+        (0x181bcd2, bytes.fromhex('c7834002000001000000'), bytes.fromhex('c7834002000000000000'),
+         'DynamicsHang::PostSolve: keep m_isExceedsSlipRange = 0 on fallback'),
+        (0x181bce5, bytes.fromhex('c7833c02000001000000'), bytes.fromhex('c7833c02000000000000'),
+         'DynamicsHang::PostSolve: keep m_failure = 0 on fallback'),
+        (0x181bed5, bytes.fromhex('c7833c02000001000000'), bytes.fromhex('c7833c02000000000000'),
+         'DynamicsHang::PostSolve: prevent 1-frame SolvePoint miss from triggering m_failure'),
+        (0x18179f9, bytes.fromhex('7612'), bytes.fromhex('eb12'),
+         'DynamicsHang::SlideMovePosDelta: do not discard sharp-angle slide on twisting fur'),
+        (0x1817b67, bytes.fromhex('41c7854402000000000000'), bytes.fromhex('41c7854402000001000000'),
+         'DynamicsHang::SlideMovePosDelta: keep m_isMoveable = 1'),
+        (0x181d390, bytes.fromhex('7624'), bytes.fromhex('eb24'),
+         'DynamicsHang::Update: reset Hang_RagdollTurnAwayElapsedTime to 0 on whipping tail'),
+    ],
 }
 
 MODES = {
@@ -343,7 +369,8 @@ def compile_mods(game_dir, eboot, mods_dir, mods_config, lines):
         return []
 
 
-def prepare(game_dir, out_dir, mode, mods_dir=None, mods_config=None, resolution=None, menu_confirm='cross'):
+def prepare(game_dir, out_dir, mode, mods_dir=None, mods_config=None, resolution=None, menu_confirm='cross',
+            tail_climb_fix=False):
     """Writes out/patches.bin for the mode plus any enabled mod; returns (applied mode, lines).
     Any problem with the frame rate patches (other eboot build, unexpected bytes) falls back to
     30 FPS without them; a mod problem only drops that mod, never the frame rate patches."""
@@ -356,7 +383,8 @@ def prepare(game_dir, out_dir, mode, mods_dir=None, mods_config=None, resolution
     eboot = None
     # TLG_FPS_PATCHES="a,b" (measurements): these patches instead of the mode's own.
     names = [n for n in os.environ.get('TLG_FPS_PATCHES', '').split(',') if n in PATCHES] or MODES[mode]
-    if names:
+    want_tail_fix = bool(tail_climb_fix or os.environ.get('TLG_TAIL_CLIMB_FIX', '').strip().lower() in ('1', 'true', 'yes', 'on'))
+    if names or want_tail_fix:
         try:
             eboot = (Path(game_dir) / 'eboot.bin').read_bytes()
         except OSError as error:
@@ -376,17 +404,29 @@ def prepare(game_dir, out_dir, mode, mods_dir=None, mods_config=None, resolution
                 lines.append(f'Frame rate: eboot.bin is a SELF ({digest[:16]}…), checking the ELF inside')
             except ValueError as error:
                 lines.append(f'Frame rate: cannot read the SELF eboot.bin ({error})')
-        if not usable:
-            lines.append(f'Frame rate: eboot.bin is not v1.03 ({digest[:16]}…): {mode} FPS patches not applied, 30 FPS')
-            mode = '30'
-        else:
-            try:
-                fps_writes = mode_writes(eboot, names)
-            except ValueError as error:
-                lines.append(f'Frame rate: {error}: patches not applied, 30 FPS')
-                mode, fps_writes = '30', []
+        if names:
+            if not usable:
+                lines.append(f'Frame rate: eboot.bin is not v1.03 ({digest[:16]}…): {mode} FPS patches not applied, 30 FPS')
+                mode = '30'
+            else:
+                try:
+                    fps_writes = mode_writes(eboot, names)
+                except ValueError as error:
+                    lines.append(f'Frame rate: {error}: patches not applied, 30 FPS')
+                    mode, fps_writes = '30', []
     for _, data, what in fps_writes:
         lines.append(f'Frame rate patch {what} ({data.hex()})')
+    tail_writes = []
+    if want_tail_fix:
+        if not usable:
+            lines.append('Tail climb fix: eboot.bin is not v1.03; not applied')
+        else:
+            try:
+                tail_writes = mode_writes(eboot, ['tail_climb_fix'])
+            except ValueError as error:
+                lines.append(f'Tail climb fix: {error}: not applied')
+    for _, data, what in tail_writes:
+        lines.append(f'Tail climb fix patch {what} ({data.hex()})')
     mod_writes = []
     if mods_dir:
         mod_writes = compile_mods(game_dir, eboot or read_eboot_elf(game_dir), mods_dir, mods_config, lines)
@@ -420,7 +460,7 @@ def prepare(game_dir, out_dir, mode, mods_dir=None, mods_config=None, resolution
            for a, data, _ in menu for b, other, _ in mod_writes):
         lines.append('Mods: overlap with menu-button conversion; external mods not applied')
         mod_writes = []
-    writes = fps_writes + menu + mod_writes + res_writes + heap
+    writes = fps_writes + tail_writes + menu + mod_writes + res_writes + heap
     write_patch_file(Path(out_dir) / 'patches.bin', writes)
     lines.append(f'Frame rate: {mode} FPS mode, {len(writes)} patch writes')
     return mode, lines
@@ -436,8 +476,11 @@ def main():
     p.add_argument('--resolution', help='WxH, e.g. 3440x1440 (default 1920x1080)')
     p.add_argument('--menu-confirm', choices=('cross', 'circle'), default='cross',
                    help='menu confirm button; Circle game-menu patch requires verified EU 01.03')
+    p.add_argument('--tail-climb-fix', action='store_true',
+                   help="experimental: stabilize climbing on Trico's moving tail/fur (v1.03)")
     a = p.parse_args()
-    _, lines = prepare(a.game_dir, a.out, a.mode, a.mods_dir, a.mods_config, a.resolution, a.menu_confirm)
+    _, lines = prepare(a.game_dir, a.out, a.mode, a.mods_dir, a.mods_config, a.resolution, a.menu_confirm,
+                       tail_climb_fix=a.tail_climb_fix)
     print('\n'.join(lines))
 
 
