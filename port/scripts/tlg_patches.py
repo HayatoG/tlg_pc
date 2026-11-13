@@ -96,14 +96,17 @@ PATCHES = {
          'cloth update null table/element guard at 0x28c161..0x28c1a4'),
     ],
     # Experimental tail / fur climbing fix (DynamicsHang + DeformableBridge, opt-in):
-    # Allows DeformableBridge::SolveMove (0x82df40) to accept 1+ hit probe and clamp steps
-    # along the bridge segment without overriding off-mesh boundary checks in PostSolve,
-    # and relaxes sharp fur-twist slide / ragdoll turn-away thresholds on a moving tail.
+    # Allows DeformableBridge::SolveMove (0x82df40) and SolvePoint (0x82efc0) to accept 1+
+    # hit ray instead of requiring 100% ray agreement on a thin whipping tail (while still
+    # failing on 0 hits / empty air so PostSolve stops climbing at fur edges), clamps steps
+    # to valid bridge nodes, and relaxes sharp fur-twist slide / ragdoll turn-away checks.
     'tail_climb_fix': [
         (0x182e113, bytes.fromhex('83fa020f85ca010000'), bytes.fromhex('85d2900f84ca010000'),
          'DeformableBridge::SolveMove: accept 1+ hit ray instead of requiring 2'),
         (0x182e11c, bytes.fromhex('c5f82e470c0f864f030000'), bytes.fromhex('9090909090e95003000090'),
          'DeformableBridge::SolveMove: clamp step to bridge endpoint instead of zeroing delta'),
+        (0x182f0c2, bytes.fromhex('39c80f85b7080000'), bytes.fromhex('85c00f84b7080000'),
+         'DeformableBridge::SolvePoint: accept 1+ hit ray instead of requiring 2*N (0 hits still fails)'),
         (0x18179f9, bytes.fromhex('7612'), bytes.fromhex('eb12'),
          'DynamicsHang::SlideMovePosDelta: do not discard sharp-angle slide on twisting fur'),
         (0x181d390, bytes.fromhex('7624'), bytes.fromhex('eb24'),
