@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "tlg_toggles.h"
+#include <cstdlib>
 #include <ranges>
 #include "common/assert.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/texture_cache/barrier_merge.h"
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
 
@@ -102,6 +104,10 @@ void UniqueImage::Destroy() {
 void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
     this->image_ci = image_ci;
     ASSERT(!image);
+    const bool is_render_or_depth = static_cast<bool>(
+        image_ci.usage & (vk::ImageUsageFlagBits::eColorAttachment |
+                          vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                          vk::ImageUsageFlagBits::eStorage));
     const VmaAllocationCreateInfo alloc_ci = {
         .flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
@@ -109,6 +115,7 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
         .preferredFlags = 0,
         .pool = VK_NULL_HANDLE,
         .pUserData = nullptr,
+        .priority = is_render_or_depth ? 1.0f : 0.6f,
     };
 
     const VkImageCreateInfo image_ci_unsafe = static_cast<VkImageCreateInfo>(image_ci);
@@ -242,6 +249,7 @@ ImageView& Image::FindView(const ImageViewInfo& view_info, bool ensure_guest_sam
 void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::AccessFlags2 dst_mask,
                         vk::PipelineStageFlags2 dst_stage,
                         std::optional<SubresourceRange> subres_range) {
+    const std::size_t first_new_barrier = barriers.size();
     auto& last_state = backing->state;
     auto& subresource_states = backing->subresource_states;
 
@@ -350,6 +358,14 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                 .layerCount = VK_REMAINING_ARRAY_LAYERS,
             },
         });
+    }
+
+    static const bool merge_barriers = [] {
+        const char* env = std::getenv("TLG_MERGE_BARRIERS");
+        return !(env && env[0] == '0');
+    }();
+    if (barriers.size() >= first_new_barrier + 2 && merge_barriers) {
+        MergeAdjacentBarriers(barriers, first_new_barrier);
     }
 
     last_state.layout = dst_layout;
