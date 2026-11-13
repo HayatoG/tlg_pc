@@ -836,7 +836,7 @@ void Rasterizer::RetireSubmission() {
 }
 
 bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle) {
-    if (!UseDrawPipe() || TlgToggle::Disabled(toggle)) {
+    if (!UseDrawPipe() || (toggle && TlgToggle::Disabled(toggle))) {
         DrainDrawPipe(DrawPipe::ReasonRasterizer);
         task(*this, static_cast<const u8*>(data));
         return false;
@@ -1152,6 +1152,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         return;
     }
     const auto state = BeginRendering(pipeline);
+    SubmitIfWorkPiledUp(state);
 
     if (!inputs_resolved) {
         ResolveVertexBuffers(pipeline, draw_prepared);
@@ -1355,6 +1356,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
     }
     DebugState.IncDrawCall();
+    scheduler.CountWork();
 
     ResetBindings(false);
     scheduler.KickRecording();
@@ -1421,6 +1423,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
         return;
     }
     const auto state = BeginRendering(pipeline);
+    SubmitIfWorkPiledUp(state);
 
     BindVertexBuffers(pipeline);
     if (is_indexed) {
@@ -1486,6 +1489,7 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
         }
     });
     DebugState.IncDrawCall();
+    scheduler.CountWork();
 
     ResetBindings(false);
     scheduler.KickRecording();
@@ -1547,19 +1551,71 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     mark();
     pipeline->BindResources(set_writes, push_data);
 
-    const vk::Pipeline handle = pipeline->Handle();
+    const auto bind = ComputeBind(pipeline);
     const u32 dim_x = cs_program.dim_x, dim_y = cs_program.dim_y, dim_z = cs_program.dim_z;
     if (FrameCapture::Active()) {
         FrameCapture::Dispatch(cs.pgm_hash, dim_x, dim_y, dim_z);
     }
     scheduler.Record([=](vk::CommandBuffer cmdbuf) {
-        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, handle);
+        bind(cmdbuf);
         cmdbuf.dispatch(dim_x, dim_y, dim_z);
     });
     DebugState.IncDispatch();
+    scheduler.CountWork();
 
     ResetBindings(true);
     scheduler.KickRecording();
+}
+
+void Rasterizer::SubmitIfWorkPiledUp(const RenderState& next_state) {
+    // tlg: commands were submitted only when a guest submission ended or something had to wait.
+    // On Windows AMD (WDDM), flushing at 1024 draws at a render-pass boundary keeps the GPU busy
+    // mid-frame without excessive submit overhead; other drivers/OSes default to 0.
+    // Set TLG_SUBMIT_DRAWS=<n> to override (0 disables).
+    static const u32 limit = [this] {
+        if (const char* env = std::getenv("TLG_SUBMIT_DRAWS"); env && *env) {
+            return static_cast<u32>(std::strtoul(env, nullptr, 10));
+        }
+#ifdef _WIN32
+        constexpr u32 kAmdVendorId = 0x1002u;
+        return instance.GetVendorID() == kAmdVendorId ? 1024u : 0u;
+#else
+        return 0u;
+#endif
+    }();
+    if (limit == 0 || scheduler.WorkSinceSubmit() < limit ||
+        !scheduler.WillBeginRendering(next_state)) {
+        return;
+    }
+    if (Pipeline::deferred_binds.load(std::memory_order_relaxed) != 0) {
+        return;
+    }
+    if (FrameCapture::Active()) {
+        return;
+    }
+    if ((++work_submits & 255) == 1) {
+        std::printf("GPU: %llu submissions of piled-up draws so far (TLG_SUBMIT_DRAWS=%u)\n",
+                    static_cast<unsigned long long>(work_submits), limit);
+    }
+    SubmitInfo info{};
+    scheduler.Flush(info);
+}
+
+Rasterizer::ComputeBinder Rasterizer::ComputeBind(const ComputePipeline* pipeline) {
+    if (pipeline->IsBuilt()) {
+        return {pipeline->Handle(), nullptr};
+    }
+    Pipeline::deferred_binds.fetch_add(1, std::memory_order_relaxed);
+    return {vk::Pipeline{}, pipeline};
+}
+
+void Rasterizer::ComputeBinder::operator()(vk::CommandBuffer cmdbuf) const {
+    if (pending) [[unlikely]] {
+        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pending->Handle());
+        Pipeline::deferred_binds.fetch_sub(1, std::memory_order_relaxed);
+        return;
+    }
+    cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, handle);
 }
 
 void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
@@ -1600,14 +1656,15 @@ void Rasterizer::DispatchIndirectRecord(const ComputePipeline* pipeline, VAddr a
     scheduler.EndRendering();
     pipeline->BindResources(set_writes, push_data);
 
-    const vk::Pipeline handle = pipeline->Handle();
+    const auto bind = ComputeBind(pipeline);
     const vk::Buffer args = buffer->Handle();
     const u64 args_offset = base;
     scheduler.Record([=](vk::CommandBuffer cmdbuf) {
-        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, handle);
+        bind(cmdbuf);
         cmdbuf.dispatchIndirect(args, args_offset);
     });
     DebugState.IncDispatch();
+    scheduler.CountWork();
 
     ResetBindings(true);
     scheduler.KickRecording();
