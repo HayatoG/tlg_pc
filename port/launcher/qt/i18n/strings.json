@@ -475,6 +475,7 @@
   "gfx_sec_debug": {"en": "Debug (at start)", "pt": "Depuração (ao iniciar)"},
   "gfx_what_level_select": {"en": "Level select: hold L1 while the title menu closes (Continue/New Game). QA menu: in game, hold L1 and press L3. GoldHEN patches by illusiony and DanielSvoboda.", "pt": "Seleção de fases: segure L1 enquanto o menu inicial fecha (Continuar/Novo jogo). Menu de QA: no jogo, segure L1 e aperte L3. Patches GoldHEN de illusiony e DanielSvoboda."},
   "gfx_what_bridge_fix": {"en": "Only if the game freezes when the bridge in the pit collapses; skips that slow motion.", "pt": "Só se o jogo travar quando a ponte do fosso desaba; pula essa câmera lenta."},
+  "gfx_what_tail_climb_fix": {"en": "[Experimental] Stabilizes climbing on Trico's moving tail/fur if the boy gets stuck in place or drops off.", "pt": "[Experimental] Estabiliza a escalada no rabo/pelo em movimento do Trico se o menino travar no lugar ou soltar."},
   "gfx_sec_launcher": {"en": "Audio and launcher", "pt": "Áudio e launcher"},
   "gfx_what_resolution": {"en": "Rendered natively; wider than 16:9 shows more of the scene and moves the HUD out to the edges.", "pt": "Renderizado nativamente; mais largo que 16:9 mostra mais da cena e leva o HUD às bordas."},
   "gfx_what_frame_rate": {"en": "The game's own frame rate: 30 as on PS4; 60 and unlocked patch the 1.03 eboot in memory (experimental, see docs/60fps.md).", "pt": "A taxa de quadros do próprio jogo: 30 como no PS4; 60 e livre alteram o eboot 1.03 na memória (experimental, ver docs/60fps.md)."},

@@ -70,6 +70,7 @@ TEXT = {
     'debug': ('Debug (at start)', 'Depuração (ao iniciar)'),
     'level_select': ('Level select and QA menu', 'Seleção de fases e menu de QA'),
     'bridge_fix': ('Collapsing bridge freeze fix', 'Correção do travamento da ponte que desaba'),
+    'tail_climb_fix': ('Tail & fur climbing fix (experimental)', 'Correção de escalada no rabo/pelo (experimental)'),
     'debug_hint': ('Level select: hold L1 while the title menu closes (Continue/New Game). QA menu: in game, hold L1 and press L3. '
                    'Bridge fix: only if the game freezes when the bridge in the pit collapses; skips that slow motion. '
                    'GoldHEN patches by illusiony and DanielSvoboda.',
@@ -495,9 +496,10 @@ class Launcher:
         debug = self.card(image, self.t('debug'), 2, 0, span=2)
         self.check(debug, 0, 'level_select')
         self.check(debug, 1, 'bridge_fix')
+        self.check(debug, 2, 'tail_climb_fix')
         ttk.Label(debug, text=self.t('debug_hint'), style='Card.TLabel',
                   foreground=self.colors['muted'], wraplength=560, justify='left').grid(
-            row=2, column=0, columnspan=3, sticky='w', pady=(10, 0))
+            row=3, column=0, columnspan=3, sticky='w', pady=(10, 0))
 
         control_page = self.settings_page('controls', 'controls_hint')
         controls = self.card(control_page, self.t('controls'), 0, 0, span=2)
