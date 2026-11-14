@@ -1,0 +1,2 @@
+# Patches are applied with git apply from a Windows checkout too: keep them LF.
+*.patch text eol=lf
