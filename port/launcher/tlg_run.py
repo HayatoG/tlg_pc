@@ -201,6 +201,7 @@ DEFAULT_SETTINGS = {
     'vsync': True,
     'level_select': False,         # tlg.ini; tlg_lua.cpp
     'bridge_fix': False,
+    'tail_climb_fix': False,       # experimental: scripts/tlg_patches.py --tail-climb-fix
     'vram_budget_mb': 5600,
     'native_audio': True,
     # Mouse and keyboard (tlg.ini; the in-game menu's Controls tab changes the mouse ones too).
@@ -543,7 +544,8 @@ def prepare(settings, log=print):
         [*python_command(scripts / 'content_profile.py'), game, '--out', str(OUT_DIR)],
         [*python_command(scripts / 'tlg_patches.py'), game, '--out', str(OUT_DIR), '--mode', frame_rate(settings),
          '--mods-dir', str(mods_dir()), '--mods-config', str(mods_config()), '--resolution', resolution(settings),
-         '--menu-confirm', menu_confirm(settings)],
+         '--menu-confirm', menu_confirm(settings),
+         *(('--tail-climb-fix',) if settings.get('tail_climb_fix', False) else ())],
     ]
     for step in steps:
         result = subprocess.run(step, cwd=str(scripts), capture_output=True, text=True,

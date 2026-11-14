@@ -2277,6 +2277,12 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                 const auto* gds_buf = buffer_cache.GetGdsBuffer();
                 buffer_infos.emplace_back(gds_buf->Handle(), 0, gds_buf->SizeBytes());
                 needs_barrier |= runtime.IsBufferAccessed(gds_buf, 0, gds_buf->SizeBytes());
+                // The grip sensor shaders count the triangles they hit with an atomic counter in
+                // GDS, and the game copies that counter back to decide whether the boy is still
+                // holding on. Record the buffer as written, so that copy waits for the compute
+                // dispatches; without it the game can see a stale counter (one hand box) and let
+                // go on AMD GPUs (tabnul/the-last-guardian-definitive#67).
+                bound_buffers.emplace_back(gds_buf, 0, gds_buf->SizeBytes(), true);
             } else if (desc.buffer_type == Shader::BufferType::Flatbuf) {
                 auto& vk_buffer = buffer_cache.GetStreamBuffer();
                 const u32 ubo_size = stage.FlatUserData().size() * sizeof(u32);
