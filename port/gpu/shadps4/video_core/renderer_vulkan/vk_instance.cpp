@@ -409,6 +409,26 @@ bool Instance::CreateDevice() {
     }
     image_view_min_lod = add_extension(VK_EXT_IMAGE_VIEW_MIN_LOD_EXTENSION_NAME);
     supports_memory_budget = add_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+    const bool memory_priority = add_extension(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME);
+    if (memory_priority) {
+        const auto priority_chain =
+            physical_device
+                .getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceMemoryPriorityFeaturesEXT>();
+        memory_priority_supported =
+            priority_chain.get<vk::PhysicalDeviceMemoryPriorityFeaturesEXT>().memoryPriority;
+    }
+    const bool pageable_extension =
+        memory_priority && add_extension(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME);
+    if (pageable_extension) {
+        const auto pageable_chain = physical_device.getFeatures2<
+            vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceMemoryPriorityFeaturesEXT,
+            vk::PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT>();
+        pageable_device_local_memory =
+            pageable_chain.get<vk::PhysicalDeviceMemoryPriorityFeaturesEXT>().memoryPriority &&
+            pageable_chain.get<vk::PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT>()
+                .pageableDeviceLocalMemory;
+        LOG_INFO(Render_Vulkan, "- pageableDeviceLocalMemory: {}", pageable_device_local_memory);
+    }
     // tlg: FSR 4 v07 INT8 (vk_temporal_upscaler): quad derivatives in compute shaders.
     compute_shader_derivatives = add_extension(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
     // tlg: FSR 4.1.1 passes (dot2 of halves accumulated in float, as vkd3d-proton translates them).
@@ -627,6 +647,12 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE{
             .shaderMixedFloatDotProductFloat16AccFloat32 = true,
         },
+        vk::PhysicalDeviceMemoryPriorityFeaturesEXT{
+            .memoryPriority = true,
+        },
+        vk::PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT{
+            .pageableDeviceLocalMemory = true,
+        },
     };
 
     if (!custom_border_color) {
@@ -687,6 +713,12 @@ bool Instance::CreateDevice() {
     if (!mixed_float_dot_product) {
         device_chain.unlink<vk::PhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE>();
     }
+    if (!memory_priority_supported) {
+        device_chain.unlink<vk::PhysicalDeviceMemoryPriorityFeaturesEXT>();
+    }
+    if (!pageable_device_local_memory) {
+        device_chain.unlink<vk::PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT>();
+    }
 
     auto [device_result, dev] = physical_device.createDeviceUnique(device_chain.get());
     if (device_result != vk::Result::eSuccess) {
@@ -746,8 +778,13 @@ void Instance::CreateAllocator() {
         .vkGetDeviceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr,
     };
 
+    VmaAllocatorCreateFlags allocator_flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    if (memory_priority_supported) {
+        allocator_flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_PRIORITY_BIT;
+    }
+
     const VmaAllocatorCreateInfo allocator_info = {
-        .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+        .flags = allocator_flags,
         .physicalDevice = physical_device,
         .device = *device,
         .pVulkanFunctions = &functions,

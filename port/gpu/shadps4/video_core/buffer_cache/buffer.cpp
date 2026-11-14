@@ -125,6 +125,7 @@ void UniqueBuffer::Create(vk::BufferCreateInfo& buffer_ci, MemoryType mem_type,
             .preferredFlags = MemoryUsagePreferredVmaFlags(mem_type),
             .pool = VK_NULL_HANDLE,
             .pUserData = nullptr,
+            .priority = mem_type == MemoryType::DeviceLocal ? 1.0f : 0.25f,
         };
 
         const VkBufferCreateInfo buffer_ci_unsafe = static_cast<VkBufferCreateInfo>(buffer_ci);
