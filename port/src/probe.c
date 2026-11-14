@@ -5,10 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include "renderer_guard.h"
+#include "format_guard.h"
 #include "runtime.h"
 #include "cpu_check.h"
 #include "isa_rewrite.h"
 #include "gpu/tlggpu.h"
+#include "gpu/shim/tlg_memory_op_diag.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
 #endif
@@ -33,11 +36,31 @@ static char (*names)[128];
 static uint64_t import_count;
 static unsigned char *image;
 static size_t page_size;
+static uint64_t *renderer_guard_skips;
+static uint64_t *format_guard_skips;
+static void renderer_guard_report(void) {
+    if (renderer_guard_skips)
+        fprintf(stderr,"Renderer guard: %llu invalid results skipped\n",
+                (unsigned long long)__atomic_load_n(renderer_guard_skips,__ATOMIC_RELAXED));
+    if (format_guard_skips)
+        fprintf(stderr,"Format guard: %llu zero-byte formats rejected\n",
+                (unsigned long long)__atomic_load_n(format_guard_skips,__ATOMIC_RELAXED));
+}
+#ifdef _WIN32
+/* Opt-in progress reports keep diagnostics available even when a bounded test is terminated. */
+static DWORD WINAPI renderer_guard_monitor(void *unused) {
+    (void)unused;
+    for (;;) { Sleep(10000); renderer_guard_report(); fflush(stderr); }
+}
+#endif
 typedef struct { uint64_t base, size, init, tls_address, tls_memsz, tls_filesz, tls_module; } LinkedModule;
 static LinkedModule modules[16];
 static uint64_t module_count;
 static int entered_game;
 static int gpu_enabled;
+#ifdef _WIN32
+static int fault_site_diag;
+#endif
 static unsigned cpu_missing_sets; /* CPU_SET_* the host lacks; the guest code needs them rewritten */
 static IsaTable *isa_table; /* rewritten sites (--isa-rewrite); the fault handlers and the report read it */
 #ifndef _WIN32
@@ -177,6 +200,56 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
         fprintf(stderr,"Fault: exception 0x%08lx at %s (thread %lu)\n",record->ExceptionCode,where,GetCurrentThreadId());
     fprintf(stderr,"  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n",
             c->Rax,c->Rbx,c->Rcx,c->Rdx,c->Rsi,c->Rdi,c->Rbp,c->Rsp);
+    /* The resource-upload crash has a non-null but invalid second argument. Capture
+     * the caller's saved renderer and slot without dereferencing untrusted pointers. */
+    if (getenv("TLG_RENDER_FAULT_DIAG") && image &&
+        (c->Rip-(uintptr_t)image==0x1479ddd || c->Rip-(uintptr_t)image==0x1479c52)) {
+        uintptr_t renderer=0, object=0, resource=0;
+        SIZE_T got=0;
+        HANDLE self=GetCurrentProcess();
+        int ok;
+        if (c->Rip-(uintptr_t)image==0x1479c52) {
+            renderer=(uintptr_t)c->R14;
+            ok=1;
+        } else {
+            ok=ReadProcessMemory(self,(void *)(uintptr_t)(c->Rbp-0x10),&renderer,sizeof(renderer),&got) && got==sizeof(renderer);
+        }
+        if (ok && c->R15<32)
+            ok=ReadProcessMemory(self,(void *)(renderer+0x2098+c->R15*8),&object,sizeof(object),&got) && got==sizeof(object);
+        else ok=0;
+        if (ok && object)
+            ok=ReadProcessMemory(self,(void *)(object+0x30),&resource,sizeof(resource),&got) && got==sizeof(resource);
+        fprintf(stderr,"Resource fault: renderer=%p slot=%llu object=%p resource=%p readable=%d\n",
+                (void *)renderer,c->R15,(void *)object,(void *)resource,ok);
+    }
+    /* Optional, narrowly scoped snapshot for the renderer's null-object failure. Reads are
+     * guarded because this runs after an exception and the guest may already be inconsistent. */
+    if (getenv("TLG_RENDER_FAULT_DIAG") && image && c->Rip-(uintptr_t)image==0x2719aa) {
+        uintptr_t frame[2]={0}, saved_r12=0, table_ref=0, table=0, object=0, item_count=0;
+        uint32_t item[2]={0}, table_count=0; SIZE_T got=0;
+        HANDLE self=GetCurrentProcess();
+        int ok=ReadProcessMemory(self,(void *)(uintptr_t)c->Rbp,frame,sizeof(frame),&got) && got==sizeof(frame);
+        ok=ok && ReadProcessMemory(self,(void *)(uintptr_t)(c->Rbp-0x20),&saved_r12,sizeof(saved_r12),&got) && got==sizeof(saved_r12);
+        ok=ok && ReadProcessMemory(self,(void *)(saved_r12+c->R14+0x80),item,sizeof(item),&got) && got==sizeof(item);
+        ok=ok && ReadProcessMemory(self,(void *)(frame[0]-0x520),&table_ref,sizeof(table_ref),&got) && got==sizeof(table_ref);
+        ok=ok && ReadProcessMemory(self,(void *)table_ref,&table,sizeof(table),&got) && got==sizeof(table);
+        ok=ok && ReadProcessMemory(self,(void *)(table_ref+8),&table_count,sizeof(table_count),&got) && got==sizeof(table_count);
+        ok=ok && ReadProcessMemory(self,(void *)(frame[0]-0x5e8),&item_count,sizeof(item_count),&got) && got==sizeof(item_count);
+        ok=ok && ReadProcessMemory(self,(void *)(table+8*(item[0]>>16)),&object,sizeof(object),&got) && got==sizeof(object);
+        fprintf(stderr,"  renderer diagnostic: valid=%d r12=%016llx r14=%016llx caller_rbp=%016llx item=%08x,%08x item_number=%llu item_count=%llu table_ref=%p table=%p table_count=%u index=%u object=%p\n",
+                ok,(unsigned long long)saved_r12,c->R14,(unsigned long long)frame[0],item[0],item[1],(unsigned long long)(c->R14/144),
+                (unsigned long long)item_count,(void *)table_ref,(void *)table,table_count,item[0]>>16,(void *)object);
+    }
+    if (getenv("TLG_RENDER_FAULT_DIAG") && image && c->Rip-(uintptr_t)image==0x149a1a0) {
+        uint32_t format_index=0, descriptor[4]={0}, size_bytes=0; SIZE_T got=0;
+        HANDLE self=GetCurrentProcess();
+        int ok=ReadProcessMemory(self,(void *)(uintptr_t)(c->Rbx+0x40),&format_index,sizeof format_index,&got) && got==sizeof format_index;
+        ok=ok && ReadProcessMemory(self,(void *)(uintptr_t)(c->R12+0x60),descriptor,sizeof descriptor,&got) && got==sizeof descriptor;
+        ok=ok && ReadProcessMemory(self,(void *)(uintptr_t)(c->R12+0x180),&size_bytes,sizeof size_bytes,&got) && got==sizeof size_bytes;
+        fprintf(stderr,"  resource diagnostic: valid=%d format_index=%u format_bits=%u format_word=%08llx size=%u descriptor=%08x,%08x,%08x,%08x r12=%016llx r15=%016llx\n",
+                ok,format_index,(unsigned)(c->R11 & 255),c->R10,size_bytes,descriptor[0],descriptor[1],descriptor[2],descriptor[3],c->R12,c->R15);
+    }
+    renderer_guard_report();
     if (gpu_enabled) tlggpu_dump_guest_writes(info);
     /* rbp chain (guest and host code keep frame pointers). */
     uintptr_t rbp=(uintptr_t)c->Rbp;
@@ -233,7 +306,21 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
             return EXCEPTION_CONTINUE_EXECUTION;
         }
         /* GPU page tracking (write-protected guest pages). */
-        if (gpu_enabled && tlggpu_handle_fault(info,(void *)record->ExceptionInformation[1])) return EXCEPTION_CONTINUE_EXECUTION;
+        if (gpu_enabled) {
+            uintptr_t previous=0, previous_target=0;
+            if (fault_site_diag && record->ExceptionInformation[0]==1) {
+                uintptr_t rip=(uintptr_t)info->ContextRecord->Rip;
+                uintptr_t site=image && rip-(uintptr_t)image<0x20000000 ? rip-(uintptr_t)image+1 : UINTPTR_MAX;
+                previous=tlg_fault_site_enter(site);
+                previous_target=tlg_fault_target_enter((uintptr_t)info->ContextRecord->Rax);
+            }
+            int handled=tlggpu_handle_fault(info,(void *)record->ExceptionInformation[1]);
+            if (fault_site_diag && record->ExceptionInformation[0]==1) {
+                tlg_fault_target_leave(previous_target);
+                tlg_fault_site_leave(previous);
+            }
+            if (handled) return EXCEPTION_CONTINUE_EXECUTION;
+        }
     }
     if (code==EXCEPTION_ACCESS_VIOLATION || code==EXCEPTION_ILLEGAL_INSTRUCTION || code==EXCEPTION_PRIV_INSTRUCTION ||
         code==EXCEPTION_STACK_OVERFLOW || code==EXCEPTION_INT_DIVIDE_BY_ZERO || code==EXCEPTION_DATATYPE_MISALIGNMENT) {
@@ -372,6 +459,7 @@ static void fault(int sig, siginfo_t *info, void *context) {
     else
         snprintf(line, sizeof(line), "Fault (signal %d) at RIP %p, address %p\n", sig, (void *)rip, info->si_addr);
     { ssize_t written_=write(2, line, strlen(line)); (void)written_; }
+    renderer_guard_report();
     if (gpu_enabled) tlggpu_dump_guest_writes(context);
     /* Engine ASSERT (int 0x41): the formatted "file(line): func() ASSERT(cond)" message sits in a
      * stack buffer of the asserting frame; its logger may be null, so print it from here. */
@@ -759,6 +847,8 @@ int main(int argc, char **argv) {
     tlggpu_register_kernel();
 #ifdef _WIN32
     SYSTEM_INFO system_info; GetSystemInfo(&system_info); page_size = system_info.dwPageSize;
+    const char *site_diag=getenv("TLG_READBACK_REUSE_DIAG");
+    fault_site_diag=site_diag && site_diag[0]=='1' && site_diag[1]=='\0';
     AddVectoredExceptionHandler(1, vectored_fault);
     SetUnhandledExceptionFilter(unhandled_fault);
     if (getenv("TLG_STRICT_HANDLES")) {
@@ -904,10 +994,15 @@ int main(int argc, char **argv) {
         else red_zone_area = round_page(isa_red_zone_code_size(isa_table));
         if (!red_zone_area) red_zone_on = 0;
     }
-    image = allocate(round_page(size) + stub_area + red_zone_area);
+    /* Guard the TLG AsyncMap result consumer before it dereferences the table entry.
+     * The exact 1.03 code signature is checked below; set TLG_RENDERER_GUARD=0 to opt out. */
+    const char *guard_env = getenv("TLG_RENDERER_GUARD");
+    const int guard_requested = !guard_env || !strcmp(guard_env,"1");
+    size_t guard_area = guard_requested ? 2 * page_size : 0;
+    image = allocate(round_page(size) + stub_area + red_zone_area + guard_area);
     unsigned char *stubs = image + round_page(size);
 #ifndef _WIN32
-    guest_code_end = (uintptr_t)image + round_page(size) + stub_area + red_zone_area;
+    guest_code_end = (uintptr_t)image + round_page(size) + stub_area + red_zone_area + guard_area;
 #endif
     if (fread(image, 1, size, f) != size || fgetc(f) != EOF) fail("incorrect memory image size");
     fclose(f);
@@ -1020,6 +1115,44 @@ int main(int argc, char **argv) {
         }
         runtime_set_report_hook(isa_report_hook);
         protect(stubs, stub_area + red_zone_area, 5);
+    }
+    if (guard_requested) {
+        /* The preceding lookup has eax=index, rdx=&table, rcx=table; the invalid path
+         * skips directly to the loop increment, before any object locks were acquired. */
+        static const unsigned char before[] = {0xc1,0xeb,0x10,0x48,0x89,0x9d,0x08,0xfb,0xff,0xff};
+        static const unsigned char increment[] = {0x48,0x8b,0x85,0x00,0xfb,0xff,0xff,0x48,0xff,0xc0};
+        static const unsigned char lock_start[] = {0x55,0x48,0x89,0xe5,0x41,0x57,0x41,0x56};
+        unsigned char *guard = stubs + stub_area + red_zone_area;
+        if (size > 0xc4d314 && !memcmp(image+0xc4cdba,before,sizeof before) &&
+            !memcmp(image+0xc4d30a,increment,sizeof increment) &&
+            !memcmp(image+0x271980,lock_start,sizeof lock_start) &&
+            renderer_guard_install(image+0xc4cdc4,guard,image+0x271980,image+0xc4cdd1,image+0xc4d30a,guard+page_size)) {
+            renderer_guard_skips=(uint64_t *)(guard+page_size);
+            atexit(renderer_guard_report);
+            const char *format_env=getenv("TLG_FORMAT_GUARD");
+            if (format_env && !strcmp(format_env,"1")) {
+                static const unsigned char after[] = {0x31,0xd2,0x45,0x31,0xf6,0xf7,0xf6,0x39,0xc8};
+                static const unsigned char cleanup[] = {0x48,0x83,0xc3,0x08,0x48,0xc7,0xc0,0xff,0xff,0xff,0xff};
+                if (size > 0x149a384 && !memcmp(image+0x149a19b,after,sizeof after) &&
+                    !memcmp(image+0x149a379,cleanup,sizeof cleanup) &&
+                    format_guard_install(image+0x149a193,guard+128,image+0x149a19b,image+0x149a379,guard+page_size+8)) {
+                    format_guard_skips=(uint64_t *)(guard+page_size+8);
+                    printf("Format guard: zero-byte format uses resource error cleanup (experimental)\n");
+                } else printf("Format guard: incompatible image; not applied\n");
+            }
+            protect(guard,page_size,5);
+            printf("Renderer guard: invalid AsyncMap entries will be skipped (TLG_RENDERER_GUARD=0 disables)\n");
+#ifdef _WIN32
+            const char *monitor=getenv("TLG_RENDERER_GUARD_MONITOR");
+            if (monitor && !strcmp(monitor,"1")) {
+                HANDLE thread=CreateThread(NULL,0,renderer_guard_monitor,NULL,0,NULL);
+                if (thread) CloseHandle(thread);
+                else fprintf(stderr,"Renderer guard: monitor could not start (%lu)\n",GetLastError());
+            }
+#endif
+        } else {
+            printf("Renderer guard: incompatible image; not applied\n");
+        }
     }
     protect(traps, round_page((import_count + 1) * 32), 5);
     if (trace_stubs) protect(trace_stubs, round_page((import_count + 1) * TRACE_STUB_SIZE), 5);

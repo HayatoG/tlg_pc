@@ -81,13 +81,22 @@ static float stick_deadzone(void) {
     if (zone<0) { const char *e=getenv("TLG_STICK_DEADZONE"); zone=e && *e ? (float)atof(e) : 0.10f; if (zone<0) zone=0; if (zone>0.5f) zone=0.5f; }
     return zone;
 }
-static uint8_t axis(int16_t v) {
-    float f=(float)v/32767.f, zone=stick_deadzone();
-    if (f>1) f=1;
-    if (f<-1) f=-1;
-    f=fabsf(f)<=zone ? 0.f : (f>0 ? f-zone : f+zone)/(1.f-zone);
+static uint8_t to_byte(float f) {
+    if (f>1.f) f=1.f;
+    if (f<-1.f) f=-1.f;
     int x=(int)lroundf(f*127.5f+127.5f);
     return (uint8_t)(x<0 ? 0 : x>255 ? 255 : x);
+}
+static void stick_pair(int16_t vx, int16_t vy, uint8_t *ox, uint8_t *oy) {
+    float fx=(float)vx/32767.f, fy=(float)vy/32767.f, zone=stick_deadzone();
+    float mag=hypotf(fx,fy);
+    if (mag<=zone) {
+        *ox=*oy=128;
+        return;
+    }
+    float scale=((mag>1.f ? 1.f : mag)-zone)/((1.f-zone)*mag);
+    *ox=to_byte(fx*scale);
+    *oy=to_byte(fy*scale);
 }
 static uint8_t trigger(int16_t v) { int x=v>>7; return (uint8_t)(x<0 ? 0 : x>255 ? 255 : x); }
 static uint16_t touch_axis(float v, int max) {
@@ -512,8 +521,8 @@ static void sample_host(PadData *d) {
         for (size_t i=0;i<pad_map.count;++i)
             if (SDL_GetGamepadButton(g,(SDL_GamepadButton)pad_map.entries[i].source)) d->buttons|=pad_map.entries[i].ps;
         const uint32_t mapped=d->buttons;
-        d->left_x=axis(SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_LEFTX)); d->left_y=axis(SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_LEFTY));
-        d->right_x=axis(SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTX)); d->right_y=axis(SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTY));
+        stick_pair(SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_LEFTX),SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_LEFTY),&d->left_x,&d->left_y);
+        stick_pair(SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTX),SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHTY),&d->right_x,&d->right_y);
         d->l2=trigger(SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_LEFT_TRIGGER)); d->r2=trigger(SDL_GetGamepadAxis(g,SDL_GAMEPAD_AXIS_RIGHT_TRIGGER));
         if (d->l2>30) d->buttons|=BTN_L2;
         if (d->r2>30) d->buttons|=BTN_R2;

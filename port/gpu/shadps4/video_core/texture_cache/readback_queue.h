@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cassert>
+#include <cstdlib>
 #include <deque>
 #include <utility>
 
@@ -11,6 +12,9 @@ namespace VideoCore {
 template <typename Payload>
 class ReadbackQueue {
 public:
+    ReadbackQueue()
+        : max_entries{EnvLimit("TLG_READBACK_QUEUE_ENTRIES", 64)},
+          max_bytes{EnvLimit("TLG_READBACK_QUEUE_MB", 64) << 20} {}
     struct Entry {
         std::uint64_t address, size, tick;
         Payload payload;
@@ -18,24 +22,24 @@ public:
         bool watched = true; ///< still protects its pages (see ReleaseOutside)
     };
     bool CanFit(std::uint64_t size) const {
-        return entries.size() < 64 && size <= MaxBytes && bytes <= MaxBytes - size;
+        return entries.size() < max_entries && size <= max_bytes && bytes <= max_bytes - size;
     }
     void Push(std::uint64_t address, std::uint64_t size, std::uint64_t tick, Payload payload) {
         assert(CanFit(size));
         entries.push_back({address, size, tick, std::move(payload)});
         bytes += size;
     }
-    std::uint64_t RequiredTick(std::uint64_t address, std::uint64_t size) const {
+    std::uint64_t RequiredTick(std::uint64_t address, std::uint64_t size, bool exact = false) const {
         std::uint64_t tick = 0;
         for (const auto& entry : entries) {
-            if (entry.valid && entry.watched && OverlapsPage(entry, address, size)) tick = entry.tick;
+            if (entry.valid && entry.watched && Overlaps(entry, address, size, exact)) tick = entry.tick;
         }
         return tick;
     }
     template <typename Callback>
-    void Cancel(std::uint64_t address, std::uint64_t size, Callback&& cancel) {
+    void Cancel(std::uint64_t address, std::uint64_t size, Callback&& cancel, bool exact = false) {
         for (auto& entry : entries) {
-            if (entry.valid && OverlapsPage(entry, address, size)) {
+            if (entry.valid && Overlaps(entry, address, size, exact)) {
                 cancel(entry);
                 entry.valid = false;
             }
@@ -77,7 +81,17 @@ private:
         const auto end = (entry.address + entry.size + 4095) & ~std::uint64_t{4095};
         return address < end && begin < address + size;
     }
-    static constexpr std::uint64_t MaxBytes = 64ull << 20;
+    static bool Overlaps(const Entry& entry, std::uint64_t address, std::uint64_t size, bool exact) {
+        if (!exact) return OverlapsPage(entry, address, size);
+        return size && address < entry.address + entry.size && entry.address < address + size;
+    }
+    static std::uint64_t EnvLimit(const char* name, std::uint64_t fallback) {
+        const char* value = std::getenv(name);
+        const std::uint64_t limit = value && *value ? std::strtoull(value, nullptr, 10) : 0;
+        return limit ? limit : fallback;
+    }
+    const std::uint64_t max_entries;
+    const std::uint64_t max_bytes;
     std::deque<Entry> entries;
     std::uint64_t bytes = 0;
 };

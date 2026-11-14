@@ -50,6 +50,8 @@ class TextureCache {
     static constexpr s64 DEFAULT_PRESSURE_GC_MEMORY = 1_GB + 512_MB;
     static constexpr s64 DEFAULT_CRITICAL_GC_MEMORY = 3_GB;
     static constexpr s64 TARGET_GC_THRESHOLD = 8_GB;
+    static constexpr s64 SMALL_CARD_MEMORY = 6_GB;
+    static constexpr s64 RESIDENCY_HEADROOM = 1_GB;
 
     using ImageIds = boost::container::small_vector<ImageId, 16>;
 
@@ -124,7 +126,7 @@ public:
     void ProcessDownloadImages();
     bool ResolveReadbacks(VAddr address, u64 size, bool assume_locks = true,
                           ReadbackSource source = ReadbackSource::Unknown);
-    void CancelReadbacks(VAddr address, u64 size);
+    void CancelReadbacks(VAddr address, u64 size, bool exact = false);
 
     /// Retrieves the image handle of the image with the provided attributes.
     [[nodiscard]] ImageId FindImage(ImageDesc& desc, bool exact_fmt = false);
@@ -438,6 +440,8 @@ private:
     u64 trigger_gc_memory = 0;
     u64 pressure_gc_memory = 0;
     u64 critical_gc_memory = 0;
+    u64 headroom_gc_memory = 0;
+    void ApplyResidencyHeadroom();
     u64 total_used_samplers = 0;
     u64 trigger_gc_samplers = 0;
     u64 pressure_gc_samplers = 0;
@@ -473,6 +477,10 @@ private:
     };
     std::array<ReadbackImageStat, 16> readback_images{};
     u64 readbacks_released = 0;
+    u64 readbacks_neighbors = 0;
+    bool ExactReadbackWaits() const {
+        return stale_readbacks && !TlgToggle::Disabled2(TlgToggle::ExactReadbackWaits);
+    }
     ReadbackQueue<Vulkan::StagingBufferRef> pending_readbacks;
     std::mutex readback_mutex;
     std::atomic<bool> has_pending_readbacks{false};
