@@ -5,7 +5,12 @@
 
 #include "tlg_copy.h"
 
+#include <atomic>
 #include <deque>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <tuple>
 #include <boost/container/small_vector.hpp>
 
 #include "common/interval_set.h"
@@ -14,6 +19,7 @@
 #include "video_core/buffer_cache/fault_manager.h"
 #include "video_core/buffer_cache/range_set.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
+#include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 
 namespace AmdGpu {
 struct Liverpool;
@@ -92,6 +98,17 @@ public:
     /// faulting thread instead of a round trip through the GPU command thread.
     void ReleaseReadProtection(VAddr device_addr, u64 size);
 
+    /// tlg: TLG_EAGER_READBACK=1 (default on in precise mode): pages the guest reads/writes after
+    /// GPU writes are learnt (NoteReadback), copied at fences (EagerCopyAtFence), and served on
+    /// the faulting thread (TryEagerRead) without waking the GPU command thread.
+    bool TryEagerRead(VAddr addr, u64 size);
+    void NoteReadback(VAddr addr, u64 size);
+    void EagerCopyAtFence();
+    /// tlg: a fence packet writes [addr, addr+size) after EagerCopyAtFence: older copies lack it.
+    void MarkFenceWrite(VAddr addr, u64 size) {
+        MarkEagerStale(addr, size);
+    }
+
     /// Finds a buffer for the specified region.
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBuffer(VAddr device_addr, u32 size,
                                                              bool is_written,
@@ -139,6 +156,60 @@ private:
     void EnsureResident(const Buffer* arena, u64 first_block, u64 last_block);
 
     void DownloadMemory(const Buffer* arena, VAddr device_addr, u64 size);
+
+    struct EagerPage {
+        u64 offset;
+        u64 tick;
+        bool dirty;
+        bool valid;
+        u32 idle;
+        u8 backoff;
+        u8 skip;
+    };
+    static bool EagerEnabled();
+    void NoteGpuWriteForEager(VAddr addr, u64 size);
+    void MarkEagerStale(VAddr addr, u64 size);
+    void ApplyEagerSubtractsLocked();
+    std::mutex eager_mutex;
+    std::map<VAddr, EagerPage> eager_pages;
+    std::vector<VAddr> eager_free_offsets;
+    u64 eager_next_offset = 0;
+    std::atomic<u32> eager_count{0};
+    std::vector<VAddr> eager_subtracts;
+    std::unique_ptr<Buffer> eager_buffer;
+
+    struct DeferredReadback {
+        Vulkan::StagingBufferRef staging;
+        boost::container::small_vector<vk::BufferCopy, 8> copies;
+        VAddr arena_base{};
+        VAddr start{};
+        VAddr end{};
+        u64 tick{};
+        std::atomic<bool> stale{};
+        std::atomic<bool> applied{};
+        std::atomic<bool> recovered{};
+        std::mutex mutex;
+        bool Done() const noexcept {
+            return applied.load(std::memory_order_acquire) ||
+                   recovered.load(std::memory_order_acquire);
+        }
+    };
+    static bool DeferredReadbackEnabled();
+    static bool LocalReadbackJoin();
+    void WaitReadbackTick(u64 tick);
+    std::tuple<const Buffer*, VAddr, VAddr> GetReadbackWindow(VAddr device_addr, u64 size);
+    u64 CollectDownloads(const Buffer* arena, VAddr device_addr, u64 size,
+                         boost::container::small_vector<vk::BufferCopy, 8>& copies);
+    std::shared_ptr<DeferredReadback> StartDeferredReadback(VAddr device_addr, u64 size);
+    std::shared_ptr<DeferredReadback> PendingDeferredReadback(VAddr device_addr, u64 size);
+    bool FinishDeferredReadback(DeferredReadback& readback, bool wait);
+    void RecoverDeferredReadback(DeferredReadback& readback);
+    void SettleDeferredReadbacks(VAddr start, VAddr end);
+    void PruneDeferredReadbacks();
+    void MarkDeferredStale(VAddr addr, u64 size, bool cpu);
+    std::mutex deferred_mutex;
+    std::vector<std::shared_ptr<DeferredReadback>> deferred_readbacks;
+    std::atomic<u32> deferred_count{0};
 
     bool SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size, bool is_written,
                            bool is_texel_buffer);

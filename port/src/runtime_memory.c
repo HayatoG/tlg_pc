@@ -175,8 +175,40 @@ static void region_erase(size_t at, size_t n) {
 /* The guest range is reserved before anything else can be placed there (runtime_start). */
 void runtime_memory_reserve(void) {
     if (region_count) return;
-    if (!VirtualAlloc2(NULL,(void *)USER_MIN,USER_MAX-USER_MIN,MEM_RESERVE|MEM_RESERVE_PLACEHOLDER,PAGE_NOACCESS,NULL,0))
+    if (!VirtualAlloc2(NULL,(void *)USER_MIN,USER_MAX-USER_MIN,MEM_RESERVE|MEM_RESERVE_PLACEHOLDER,PAGE_NOACCESS,NULL,0)) {
+        DWORD error = GetLastError();
+        MEMORY_BASIC_INFORMATION info;
+        uintptr_t cursor = USER_MIN;
+        while (cursor < USER_MAX && VirtualQuery((void *)cursor, &info, sizeof(info))) {
+            uintptr_t next = (uintptr_t)info.BaseAddress + info.RegionSize;
+            if (info.State != MEM_FREE) {
+                fprintf(stderr, "Runtime: PS4 range occupied at %p, allocation %p, size 0x%zx, state 0x%lx, type 0x%lx\n",
+                        info.BaseAddress, info.AllocationBase, info.RegionSize,
+                        (unsigned long)info.State, (unsigned long)info.Type);
+                ULONG_PTR stack_low, stack_high;
+                GetCurrentThreadStackLimits(&stack_low, &stack_high);
+                MEMORY_BASIC_INFORMATION stack_info;
+                if (VirtualQuery((void *)stack_low, &stack_info, sizeof(stack_info)))
+                    fprintf(stderr, "Runtime: main stack allocation %p, limits %p..%p%s\n",
+                            stack_info.AllocationBase, (void *)stack_low, (void *)stack_high,
+                            stack_info.AllocationBase == info.AllocationBase ? " (conflict)" : "");
+                HANDLE heaps[256];
+                DWORD heap_count = GetProcessHeaps(256, heaps);
+                DWORD shown = heap_count < 256 ? heap_count : 256;
+                for (DWORD i = 0; i < shown; ++i) {
+                    MEMORY_BASIC_INFORMATION heap_info;
+                    if (VirtualQuery(heaps[i], &heap_info, sizeof(heap_info)) &&
+                        heap_info.AllocationBase == info.AllocationBase)
+                        fprintf(stderr, "Runtime: conflict is process heap %lu (%p)\n", (unsigned long)i, heaps[i]);
+                }
+                break;
+            }
+            if (next <= cursor) break;
+            cursor = next;
+        }
+        SetLastError(error);
         win_fail("reserving the PS4 address range (link with --disable-high-entropy-va)",USER_MIN,USER_MAX-USER_MIN);
+    }
     /* The system-reserved window sits below USER_MIN; without its own placeholder, a hinted map
      * there (TLG's tessellation ring) stopped the game with "guest range outside the reservation". */
     if (VirtualAlloc2(NULL,(void *)SYSTEM_RESERVED_MIN,SYSTEM_RESERVED_MAX-SYSTEM_RESERVED_MIN,MEM_RESERVE|MEM_RESERVE_PLACEHOLDER,PAGE_NOACCESS,NULL,0))

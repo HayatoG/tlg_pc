@@ -123,7 +123,16 @@ extern "C" void tlggpu_dump_guest_writes(void* ucontext) {
     const std::uint64_t block = regs[0];
     for (std::uint64_t at = block - 0x30; at < block + 0x60; at += 8) {
         std::uint64_t value = 0;
+#ifdef _WIN32
+        SIZE_T read = 0;
+        if (!ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(at), &value,
+                               sizeof(value), &read) || read != sizeof(value)) {
+            std::fprintf(stderr, "Write log: [%#llx] unavailable\n", (unsigned long long)at);
+            continue;
+        }
+#else
         std::memcpy(&value, reinterpret_cast<const void*>(at), 8);
+#endif
         std::fprintf(stderr, "Write log: [%#llx] = %#llx\n", (unsigned long long)at,
                      (unsigned long long)value);
     }
@@ -160,5 +169,21 @@ extern "C" void tlggpu_dump_guest_writes(void* ucontext) {
             ++shown;
         }
     }
+#ifdef _WIN32
+    // At the renderer's resource loop r14 is the renderer and r15 the slot.
+    // The slot is farther than the generic 4 KiB register-neighbour scan.
+    if (c->R15 < 32 && c->R14 < UINT64_MAX - 0x2198) {
+        const std::uint64_t slot = c->R14 + 0x2098 + c->R15 * 8;
+        std::fprintf(stderr, "Write log: candidate resource slot %#llx\n", (unsigned long long)slot);
+        shown = 0;
+        for (std::uint64_t i = n; i-- > (n > Size ? n - Size : 0) && shown < 64;) {
+            const Entry& e = ring[i % Size];
+            if (e.address <= slot && e.size > slot - e.address) {
+                print(e, "resource slot");
+                ++shown;
+            }
+        }
+    }
+#endif
     std::fprintf(stderr, "Write log: %llu writes logged\n", (unsigned long long)n);
 }

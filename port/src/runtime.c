@@ -2,6 +2,7 @@
 #define _CRT_RAND_S
 #include "runtime.h"
 #include "gpu/tlggpu.h"
+#include "gpu/shim/tlg_memory_op_diag.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,7 @@ static uint64_t capabilities;
 static _Atomic size_t guards_acquired, guards_released;
 static uint64_t stack_canary;
 static _Atomic size_t memory_calls;
+static int memory_op_diag;
 /* Dynamic TLS of linked modules: module IDs 2..7 (1 is the eboot's static TLS). */
 #define TLS_MODULES 8
 static struct { const void *data; uint64_t filesz, memsz; } tls_modules[TLS_MODULES];
@@ -53,6 +55,8 @@ static ABI void *guest_tls_get_addr(const uint64_t *index) {
 
 void runtime_start(uint64_t flags) {
     capabilities = flags;
+    const char *diag = getenv("TLG_READBACK_REUSE_DIAG");
+    memory_op_diag = diag && diag[0] == '1' && diag[1] == '\0';
     if (!(flags & 1)) return;
 #ifdef _WIN32
     unsigned int halves[2];
@@ -164,13 +168,25 @@ static ABI __attribute__((noreturn)) void stack_fail(void) {
     exit(22);
 }
 static ABI void *guest_memset(void *dst, int value, size_t size) {
-    atomic_fetch_add_explicit(&memory_calls,1,memory_order_relaxed); return memset(dst, value, size);
+    atomic_fetch_add_explicit(&memory_calls,1,memory_order_relaxed);
+    if (!memory_op_diag) return memset(dst, value, size);
+    TlgMemoryOp previous = tlg_memory_op_enter(TLG_OP_FILL, (uintptr_t)dst, 0, size);
+    void *result = memset(dst, value, size);
+    tlg_memory_op_leave(previous); return result;
 }
 static ABI void *guest_memcpy(void *dst, const void *src, size_t size) {
-    atomic_fetch_add_explicit(&memory_calls,1,memory_order_relaxed); return memcpy(dst, src, size);
+    atomic_fetch_add_explicit(&memory_calls,1,memory_order_relaxed);
+    if (!memory_op_diag) return memcpy(dst, src, size);
+    TlgMemoryOp previous = tlg_memory_op_enter(TLG_OP_COPY, (uintptr_t)dst, (uintptr_t)src, size);
+    void *result = memcpy(dst, src, size);
+    tlg_memory_op_leave(previous); return result;
 }
 static ABI void *guest_memmove(void *dst, const void *src, size_t size) {
-    atomic_fetch_add_explicit(&memory_calls,1,memory_order_relaxed); return memmove(dst, src, size);
+    atomic_fetch_add_explicit(&memory_calls,1,memory_order_relaxed);
+    if (!memory_op_diag) return memmove(dst, src, size);
+    TlgMemoryOp previous = tlg_memory_op_enter(TLG_OP_MOVE, (uintptr_t)dst, (uintptr_t)src, size);
+    void *result = memmove(dst, src, size);
+    tlg_memory_op_leave(previous); return result;
 }
 static ABI int guest_memcmp(const void *a, const void *b, size_t size) {
     atomic_fetch_add_explicit(&memory_calls,1,memory_order_relaxed); return memcmp(a, b, size);

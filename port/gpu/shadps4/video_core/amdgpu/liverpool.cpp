@@ -9,6 +9,7 @@
 #include <time.h>
 #include "tlg_copy.h"
 #include "tlg_toggles.h"
+#include "tlg_command_diag.h"
 #include <cstdio>
 #include <boost/preprocessor/stringize.hpp>
 
@@ -86,19 +87,35 @@ Liverpool::~Liverpool() {
 }
 
 void Liverpool::ProcessCommands() {
-    if (num_commands && rasterizer) {
-        rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCommands); // tlg: commands touch the caches
-    }
-    // Process incoming commands with high priority
+    // tlg: a readback runs in order on the draw recording thread; anything else touches the
+    // caches from this thread, so the pipe is drained first (which also runs the readbacks
+    // handed over before it: the order between the two kinds holds).
+    bool drained = false;
     while (num_commands) {
-        Common::UniqueFunction<void> callback{};
+        Command command{};
         {
             std::scoped_lock lk{submit_mutex};
-            callback = std::move(command_queue.front());
+            command = std::move(command_queue.front());
             command_queue.pop();
             --num_commands;
         }
-        callback();
+        if (command.in_order && rasterizer && rasterizer->RunCommandInOrder(std::move(command.func))) {
+            continue;
+        }
+        if (!drained && rasterizer) {
+            if (TlgStats::perf_diag_enabled) {
+                const auto queued =
+                    static_cast<std::uint64_t>(num_commands.load(std::memory_order_relaxed)) + 1;
+                TlgStats::cmd_drain_groups.fetch_add(1, std::memory_order_relaxed);
+                TlgStats::cmd_drain_queued.fetch_add(queued, std::memory_order_relaxed);
+                auto previous = TlgStats::cmd_drain_max.load(std::memory_order_relaxed);
+                while (queued > previous && !TlgStats::cmd_drain_max.compare_exchange_weak(
+                                                previous, queued, std::memory_order_relaxed)) {}
+            }
+            rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCommands); // tlg: commands touch the caches
+            drained = true;
+        }
+        command.func();
     }
 }
 
@@ -261,6 +278,12 @@ void SignalEop(const PM4CmdEventWriteEop& eop) {
 void RunEventWriteEop(Vulkan::Rasterizer& rasterizer, const u8* data) {
     const auto eop = *reinterpret_cast<const PM4CmdEventWriteEop*>(data);
     rasterizer.ProcessDownloadImages();
+    rasterizer.EagerCopyAtFence();
+    // tlg: the label is written after the eager copies were taken so a cached page never contains
+    // a stale fence value.
+    if (eop.data_sel.Value() != DataSelect::None) {
+        rasterizer.GetBufferCache().MarkFenceWrite(reinterpret_cast<VAddr>(eop.Address<u32>()), 8);
+    }
     // Guest memory copies on the copy threads precede the fence the guest sees.
     // TLG_ASYNC_FENCES=1 writes it once they are done instead of waiting for them; measured
     // slower (79 vs 83 FPS): the guest waits on these fences, and later fences stall it more
@@ -341,6 +364,8 @@ void RunEventWriteEos(Vulkan::Rasterizer& rasterizer, const u8* data) {
     rasterizer.WaitHostCopies();
     rasterizer.WaitDeferredSignals();
     rasterizer.ProcessDownloadImages();
+    rasterizer.EagerCopyAtFence();
+    rasterizer.GetBufferCache().MarkFenceWrite(reinterpret_cast<VAddr>(event_eos.Address()), 8);
     event_eos.SignalFence([](void* address, u64 value, u32 num_bytes) {
         auto* memory = Core::Memory::Instance();
         TlgWriteLog::Note(reinterpret_cast<u64>(address), &value, num_bytes, TlgWriteLog::Fence);

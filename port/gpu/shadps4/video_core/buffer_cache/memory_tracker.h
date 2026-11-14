@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <deque>
 #include <mutex>
 #include <type_traits>
@@ -53,6 +54,20 @@ public:
                             });
     }
 
+    /// tlg: as MarkRegionAsCpuModified, for a write fault served by a copy applied on the
+    /// faulting thread: pages the GPU marked modified again since are left alone, so the write
+    /// faults again and reads them back first instead of the upload taking stale guest bytes.
+    void MarkRegionAsCpuModifiedUnlessGpu(VAddr dirty_cpu_addr, u64 query_size) {
+        IteratePages<false>(dirty_cpu_addr, query_size,
+                            [](RegionManager* manager, u64 offset, size_t size) {
+                                std::scoped_lock lk{manager->lock};
+                                if (!manager->template IsRegionModified<Type::GPU>(offset, size)) {
+                                    manager->template ChangeRegionState<Type::CPU, true>(
+                                        manager->GetCpuAddr() + offset, size);
+                                }
+                            });
+    }
+
     /// tlg: see RegionManager::ExtendWriteFault.
     void ExtendWriteFault(VAddr window_addr, u64 size) {
         IteratePages<false>(window_addr, size,
@@ -70,6 +85,64 @@ public:
                                 manager->template ChangeRegionState<Type::GPU, false>(
                                     manager->GetCpuAddr() + offset, size);
                             });
+    }
+
+    /// tlg: applies a copy of GPU data made earlier (deferred and eager readbacks, buffer_cache.cpp).
+    /// With the region locks of the range held (taken in address order), and only if pred()
+    /// holds: write(start, end) is called for each run of pages still marked GPU modified, then
+    /// the range is unmarked (which lifts the read protection). Returns pred().
+    template <typename Pred, typename Write>
+    bool ApplyGpuCopyIf(VAddr cpu_addr, u64 size, Pred&& pred, Write&& write) {
+        struct Segment {
+            RegionManager* manager;
+            u64 offset;
+            size_t size;
+        };
+        std::array<Segment, 8> segments;
+        size_t count = 0;
+        bool too_large = false;
+        IteratePages<false>(cpu_addr, size, [&](RegionManager* manager, u64 offset, size_t size) {
+            if (count == segments.size()) {
+                too_large = true;
+                return;
+            }
+            segments[count++] = {manager, offset, size};
+        });
+        if (too_large) {
+            return false;
+        }
+        for (size_t i = 0; i < count; ++i) {
+            segments[i].manager->lock.lock();
+        }
+        const bool apply = pred();
+        if (apply) {
+            for (size_t i = 0; i < count; ++i) {
+                const auto& [manager, offset, seg_size] = segments[i];
+                const u64 base = manager->GetCpuAddr();
+                const u64 first = offset / TRACKER_BYTES_PER_PAGE * TRACKER_BYTES_PER_PAGE;
+                u64 run_start = 0;
+                bool in_run = false;
+                for (u64 page = first; page < offset + seg_size; page += TRACKER_BYTES_PER_PAGE) {
+                    const bool modified =
+                        manager->template IsRegionModified<Type::GPU>(page, TRACKER_BYTES_PER_PAGE);
+                    if (modified && !in_run) {
+                        run_start = std::max<u64>(page, offset);
+                        in_run = true;
+                    } else if (!modified && in_run) {
+                        write(base + run_start, base + page);
+                        in_run = false;
+                    }
+                }
+                if (in_run) {
+                    write(base + run_start, base + offset + seg_size);
+                }
+                manager->template ChangeRegionState<Type::GPU, false>(base + offset, seg_size);
+            }
+        }
+        for (size_t i = count; i-- > 0;) {
+            segments[i].manager->lock.unlock();
+        }
+        return apply;
     }
 
     /// Removes all protection from a page and ensures GPU data has been flushed if requested

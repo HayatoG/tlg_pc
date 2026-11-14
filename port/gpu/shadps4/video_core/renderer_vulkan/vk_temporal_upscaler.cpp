@@ -1344,6 +1344,14 @@ void TemporalUpscaler::Run() {
             {input_depth, input_depth_view, depth_format, vk::ImageAspectFlagBits::eDepth, w, h}, w, h,
             ow, oh, frame_ms, true, jitter);
     } else {
+        if (std::getenv("TLG_UPSCALER_TRACE")) {
+            static bool logged = false;
+            if (!logged) {
+                logged = true;
+                std::printf("Upscaler trace: scene FSR dispatch requested (dlaa=%d)\n",
+                            int(TlgSettings::Get().dlaa.load()));
+            }
+        }
         dispatched = RecordFsr3(cmdbuf, input_color, color.info.pixel_format, color.usage_flags,
                                 input_depth, depth_format, depth.usage_flags, w, h, ow, oh,
                                 frame_ms, has_reactive, jitter);

@@ -16,6 +16,8 @@
 #endif
 #include "common/assert.h"
 #include "tlg_toggles.h"
+#include "tlg_command_diag.h"
+#include "tlg_readback_reuse.h"
 #include "tlg_freeze.h"
 #include "tlg_settings.h"
 #include "tlg_graphics.h"
@@ -488,8 +490,14 @@ void VideoOutDriver::Flip(const Request& req) {
             // (and so the frame rate) differs a little.
             static u64 window_draws = 0, window_gpu_us = 0;
             const u64 all_draws = TlgStats::draws.load();
+            // Windows samples the command thread with GetThreadTimes above; the rusage
+            // counters are only updated on POSIX. Use the same cumulative CPU clock here.
+#ifdef _WIN32
+            const u64 gpu_us = gpu_ns ? gpu_ns / 1000 : window_gpu_us;
+#else
             const u64 gpu_us = TlgStats::gpu_user_us.load() + TlgStats::gpu_sys_us.load();
-            const double us_per_draw = all_draws > window_draws
+#endif
+            const double us_per_draw = all_draws > window_draws && gpu_us >= window_gpu_us
                                            ? double(gpu_us - window_gpu_us) / (all_draws - window_draws)
                                            : 0.0;
             const double draws_per_frame = frames ? double(all_draws - window_draws) / frames : 0.0;
@@ -519,6 +527,56 @@ void VideoOutDriver::Flip(const Request& req) {
                         frames ? double(TlgStats::scene_draws.exchange(0)) / frames : 0.0);
             presenter->GetRasterizer().GetPipelineCache().ReportCompilerStats();
             Vulkan::WaitDiagnostics::Report();
+            if (TlgStats::perf_diag_enabled) {
+                const auto epoch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                std::printf("Frame diagnostic: unix_ms %lld, window_ms %.0f, fps %.2f, draws %.0f/frame\n",
+                            static_cast<long long>(epoch_ms), window * 1000.0, frames / window, draws_per_frame);
+                std::printf("GPU command batches: drains %llu, queued %llu, maximum %llu\n",
+                            static_cast<unsigned long long>(TlgStats::cmd_drain_groups.exchange(0)),
+                            static_cast<unsigned long long>(TlgStats::cmd_drain_queued.exchange(0)),
+                            static_cast<unsigned long long>(TlgStats::cmd_drain_max.exchange(0)));
+                std::printf("Buffer downloads: empty %llu, copies %llu, ranges %llu, staged %.2f MiB\n",
+                            static_cast<unsigned long long>(TlgStats::buffer_empty.exchange(0)),
+                            static_cast<unsigned long long>(TlgStats::buffer_copies.exchange(0)),
+                            static_cast<unsigned long long>(TlgStats::buffer_ranges.exchange(0)),
+                            double(TlgStats::buffer_staged_bytes.exchange(0)) / 1048576.0);
+                if (TlgStats::ReadbackReuseEnabled()) {
+                    const auto r = TlgStats::TakeReadbackReuse();
+                    std::printf("Readback page reuse: first %llu, <16ms %llu, <100ms %llu, <1000ms %llu, older %llu, writes %llu, collisions %llu, crossing %llu\n",
+                        static_cast<unsigned long long>(r.first), static_cast<unsigned long long>(r.fast),
+                        static_cast<unsigned long long>(r.medium), static_cast<unsigned long long>(r.slow),
+                        static_cast<unsigned long long>(r.old), static_cast<unsigned long long>(r.writes),
+                        static_cast<unsigned long long>(r.collisions), static_cast<unsigned long long>(r.crossing));
+                    std::printf("Readback write origin: memcpy %llu, memset %llu, memmove %llu, other %llu, size64_nonoverlap %llu\n",
+                        static_cast<unsigned long long>(r.copy), static_cast<unsigned long long>(r.fill),
+                        static_cast<unsigned long long>(r.move), static_cast<unsigned long long>(r.other),
+                        static_cast<unsigned long long>(r.eligible64));
+                    std::printf("Hot write GPU page bytes: empty %llu, 1-16 %llu, 17-4095 %llu, full %llu\n",
+                        static_cast<unsigned long long>(TlgStats::dirty_page_empty.exchange(0)),
+                        static_cast<unsigned long long>(TlgStats::dirty_page_small.exchange(0)),
+                        static_cast<unsigned long long>(TlgStats::dirty_page_partial.exchange(0)),
+                        static_cast<unsigned long long>(TlgStats::dirty_page_full.exchange(0)));
+                    std::printf("Hot write block coverage: within160 %llu, outside160 %llu, unknown %llu\n",
+                        static_cast<unsigned long long>(TlgStats::hot_block_inside.exchange(0)),
+                        static_cast<unsigned long long>(TlgStats::hot_block_outside.exchange(0)),
+                        static_cast<unsigned long long>(TlgStats::hot_block_unknown.exchange(0)));
+                    auto s = TlgStats::TakeFaultSites();
+                    std::sort(s.sites.begin(), s.sites.end(), [](auto a, auto b) { return a.count > b.count; });
+                    std::printf("Readback write sites sampled 1/16: overflow %llu\n", static_cast<unsigned long long>(s.overflow));
+                    for (std::size_t i = 0; i < 8 && s.sites[i].count; ++i) {
+                        const auto site = s.sites[i];
+                        if (site.key == 0 || site.key == UINT64_MAX)
+                            std::printf("  write site %s: %llu\n", site.key ? "outside guest" : "unavailable", static_cast<unsigned long long>(site.count));
+                        else
+                            std::printf("  write site guest+0x%llx: %llu\n", static_cast<unsigned long long>(site.key-1), static_cast<unsigned long long>(site.count));
+                    }
+                }
+                std::printf("GPU command requests: buffer readback %llu, image readback %llu, flip %llu\n",
+                            static_cast<unsigned long long>(TlgStats::cmd_buffer_readback.exchange(0)),
+                            static_cast<unsigned long long>(TlgStats::cmd_image_readback.exchange(0)),
+                            static_cast<unsigned long long>(TlgStats::cmd_flip.exchange(0)));
+            }
             // Frame pacing: spread of the guest flip intervals (judder that the mean hides).
             if (intervals.size() > 2) {
                 std::vector<double> sorted = intervals;
@@ -618,6 +676,8 @@ bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
 
     if (!is_eop) {
         // Non EOP flips can arrive from any thread so ask GPU thread to perform them
+        if (TlgStats::perf_diag_enabled)
+            TlgStats::cmd_flip.fetch_add(1, std::memory_order_relaxed);
         liverpool->SendCommand([=, this]() { SubmitFlipInternal(port, index, flip_arg, is_eop); });
     } else {
         SubmitFlipInternal(port, index, flip_arg, is_eop);
