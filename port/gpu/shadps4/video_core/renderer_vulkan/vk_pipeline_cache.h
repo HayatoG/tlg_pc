@@ -17,6 +17,7 @@
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_async_compiler.h"
+#include "video_core/renderer_vulkan/pipeline_cache_seed.h"
 
 template <>
 struct std::hash<vk::ShaderModule> {
@@ -232,7 +233,7 @@ private:
     CompilerPool<Shader::Pools> compiler_pools{8};
     std::unique_ptr<AsyncCompiler> compiler, capture_compiler;
     std::vector<vk::UniquePipelineCache> worker_pipeline_caches;
-    bool worker_caches_seeded = false;
+    PipelineCacheSeed worker_cache_seed;
     /// tlg: TLG_PARALLEL_WARMUP: WarmUp builds the cached pipelines on these threads.
     struct WarmupPool;
     WarmupPool* warmup_pool = nullptr;
