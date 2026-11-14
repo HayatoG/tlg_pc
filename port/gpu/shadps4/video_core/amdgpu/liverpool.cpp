@@ -90,7 +90,9 @@ void Liverpool::ProcessCommands() {
     // tlg: a readback runs in order on the draw recording thread; anything else touches the
     // caches from this thread, so the pipe is drained first (which also runs the readbacks
     // handed over before it: the order between the two kinds holds).
-    bool drained = false;
+    // Drain before *each* such callback, not once per group (tabnul PR #151): a command queued
+    // after an earlier drain must not change buffer ranges while the recorder is still hashing
+    // them (stage B faulting on a page stage A waits for hung both threads).
     while (num_commands) {
         Command command{};
         {
@@ -102,7 +104,7 @@ void Liverpool::ProcessCommands() {
         if (command.in_order && rasterizer && rasterizer->RunCommandInOrder(std::move(command.func))) {
             continue;
         }
-        if (!drained && rasterizer) {
+        if (rasterizer) {
             if (TlgStats::perf_diag_enabled) {
                 const auto queued =
                     static_cast<std::uint64_t>(num_commands.load(std::memory_order_relaxed)) + 1;
@@ -113,7 +115,6 @@ void Liverpool::ProcessCommands() {
                                                 previous, queued, std::memory_order_relaxed)) {}
             }
             rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCommands); // tlg: commands touch the caches
-            drained = true;
         }
         command.func();
     }
