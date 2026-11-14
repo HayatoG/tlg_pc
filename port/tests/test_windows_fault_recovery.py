@@ -26,6 +26,12 @@ typedef struct { int unused; } IsaRegs;
 static void *isa_table;
 static unsigned char *image;
 static int gpu_enabled=1;
+/* fault-site diagnostics (probe.c's vectored_fault records the faulting site when enabled) */
+static int fault_site_diag;
+static uintptr_t tlg_fault_site_enter(uintptr_t site) { (void)site; return 0; }
+static void tlg_fault_site_leave(uintptr_t previous) { (void)previous; }
+static uintptr_t tlg_fault_target_enter(uintptr_t target) { (void)target; return 0; }
+static void tlg_fault_target_leave(uintptr_t previous) { (void)previous; }
 static volatile int speculative_expected, gpu_calls, nested_read, nested_recovered;
 static volatile unsigned char *page, *other;
 static void isa_context_regs(CONTEXT *c, IsaRegs *r, int to) { (void)c; (void)r; (void)to; }
