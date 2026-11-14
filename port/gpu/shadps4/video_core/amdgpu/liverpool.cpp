@@ -1367,11 +1367,13 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
 
     auto base_addr = reinterpret_cast<VAddr>(acb.data());
     size_t acb_size = acb.size_bytes();
-    while (!acb.empty()) {
-        ProcessCommands();
+    const auto drain_for_compute = [&] {
         if (rasterizer) {
             rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCompute); // tlg: compute work uses the caches
         }
+    };
+    while (!acb.empty()) {
+        ProcessCommands();
 
         auto* header = reinterpret_cast<const PM4Header*>(acb.data());
         u32 next_dw_off = header->type3.NumWords() + 1;
@@ -1433,6 +1435,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::DmaData: {
+            drain_for_compute();
             const auto* dma_data = reinterpret_cast<const PM4DmaData*>(header);
             if (dma_data->dst_addr_lo == 0x3022C || !rasterizer) {
                 break;
@@ -1485,6 +1488,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             if (!rasterizer) {
                 break;
             }
+            drain_for_compute();
             const PM4CmdRewind* rewind = reinterpret_cast<const PM4CmdRewind*>(header);
             while (!rewind->Valid()) {
                 YIELD_ASC(vqid);
@@ -1502,6 +1506,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                              (set_data->reg_offset - 0x200);
                 std::memcpy(addr, header + 2, set_size);
             } else {
+                drain_for_compute();
                 std::memcpy(&regs.reg_array[Regs::ShRegWordOffset + set_data->reg_offset],
                             header + 2, set_size);
                 // tlg: interleaves with the graphics stream at an unpredictable point, so
@@ -1519,6 +1524,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::DispatchDirect: {
+            drain_for_compute();
             const auto* dispatch_direct = reinterpret_cast<const PM4CmdDispatchDirect*>(header);
             if (auto it = std::ranges::find(indirect_patches, header, &IndirectPatch::header);
                 it != indirect_patches.end()) {
@@ -1545,6 +1551,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::DispatchIndirect: {
+            drain_for_compute();
             const auto* dispatch_indirect =
                 reinterpret_cast<const PM4CmdDispatchIndirectMec*>(header);
             auto& cs_program = GetCsRegs();
@@ -1564,6 +1571,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::WriteData: {
+            drain_for_compute();
             // tlg: copies deferred to the recording thread precede writes the guest sees, and
             // so do graphics fences deferred to it (the pipe was drained before this packet).
             if (rasterizer) {
@@ -1581,6 +1589,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::MemSemaphore: {
+            drain_for_compute();
             const auto* mem_semaphore = reinterpret_cast<const PM4CmdMemSemaphore*>(header);
             if (mem_semaphore->IsSignaling()) {
                 mem_semaphore->Signal();
@@ -1593,6 +1602,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::WaitRegMem: {
+            drain_for_compute();
             const auto* wait_reg_mem = reinterpret_cast<const PM4CmdWaitRegMem*>(header);
             ASSERT(wait_reg_mem->engine.Value() == PM4CmdWaitRegMem::Engine::Me);
             while (!wait_reg_mem->Test(regs.reg_array)) {
@@ -1601,6 +1611,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::ReleaseMem: {
+            drain_for_compute();
             // tlg: copies deferred to the recording thread precede writes the guest sees, and
             // so do graphics fences deferred to it (the pipe was drained before this packet).
             if (rasterizer) {
@@ -1610,6 +1621,8 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
             if (rasterizer) {
                 rasterizer->ProcessDownloadImages();
+                rasterizer->EagerCopyAtFence();
+                rasterizer->GetBufferCache().MarkFenceWrite(release_mem->Address<VAddr>(), 8);
             }
             release_mem->SignalFence(
                 [pipe_id = queue.pipe_id] {

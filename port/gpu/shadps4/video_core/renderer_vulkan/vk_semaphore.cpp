@@ -2,12 +2,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <limits>
+#include <thread>
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
 
 #include "common/assert.h"
 
 namespace Vulkan {
+
+namespace {
+inline void CpuRelax() noexcept {
+#if defined(__x86_64__) || defined(_M_X64)
+    _mm_pause();
+#endif
+}
+} // namespace
 
 constexpr u64 WAIT_TIMEOUT = std::numeric_limits<u64>::max();
 
@@ -49,10 +61,17 @@ void Semaphore::Wait(u64 tick) {
     if (IsFree(tick)) {
         return;
     }
-    // Update the GPU tick and try again
-    Refresh();
-    if (IsFree(tick)) {
-        return;
+    // Brief bounded spin-poll before entering kernel wait (avoids WDDM wait transition latency
+    // when the GPU is about to signal this timeline tick without hammering vkGetSemaphoreCounterValue).
+    constexpr u32 MaxSpinIters = 8;
+    for (u32 iter = 0; iter < MaxSpinIters; ++iter) {
+        Refresh();
+        if (IsFree(tick)) {
+            return;
+        }
+        for (u32 relax = 0; relax < 16; ++relax) {
+            CpuRelax();
+        }
     }
 
     // If none of the above is hit, fallback to a regular wait

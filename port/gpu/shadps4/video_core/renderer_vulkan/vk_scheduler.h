@@ -773,6 +773,20 @@ public:
                !TlgToggle::Disabled(TlgToggle::ThreadedRecording);
     }
 
+    /// True when the recording thread is running (regardless of direct_mode).
+    [[nodiscard]] bool RecordsOnThread() const noexcept {
+        return recording_threaded;
+    }
+
+    /// tlg: work recorded since the last SubmitExecution(). Used to force a submit when work piles up.
+    void CountWork() noexcept {
+        work_since_submit.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] u32 WorkSinceSubmit() const noexcept {
+        return work_since_submit.load(std::memory_order_relaxed);
+    }
+
     /// Makes room for `bytes` of RecordData() plus the command that uses them in the current
     /// chunk: data and command must share a chunk, which is recycled once executed.
     void ReserveRecordData(size_t bytes) {
@@ -970,6 +984,7 @@ private:
     // tlg: whether recorder_thread runs, read on every Record(). std::jthread::joinable()
     // compares thread ids, which on Windows (libc++ over winpthreads) costs two system calls.
     bool recording_threaded{false};
+    std::atomic<u32> work_since_submit{0};
     std::jthread recorder_thread;
     tracy::VkCtxScope* profiler_scope{};
 };

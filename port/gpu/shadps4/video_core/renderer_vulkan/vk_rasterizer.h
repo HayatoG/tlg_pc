@@ -296,6 +296,16 @@ private:
     static void RunTextureTask(void* rasterizer);
     static void JoinBindHelper(void* rasterizer);
 
+    struct ComputeBinder {
+        vk::Pipeline handle;
+        const ComputePipeline* pending;
+        void operator()(vk::CommandBuffer cmdbuf) const;
+    };
+    static ComputeBinder ComputeBind(const ComputePipeline* pipeline);
+
+    void SubmitIfWorkPiledUp(const RenderState& next_state);
+    u64 work_submits = 0;
+
     /// Display pass: counts the frame (TlgStats::gpu_frames) and, with TLG_BUFFER_STATS, the lag.
     void NoteFrameStart();
     /// TLG_GPU_PROFILE: a timestamp where a render pass starts (vk_gpu_profiler.h).
