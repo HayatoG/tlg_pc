@@ -10,6 +10,11 @@
 
 namespace Common {
 
+/// tlg: TLG_GC_FIX bit 1 (on by default). ForEachItemBelow never honoured a callback's stop
+/// request (the trait compared std::invoke_result, not its ::type, with bool), so every collector
+/// pass walked the whole queue. TLG_GC_FIX=0 keeps the old behaviour for A/B runs.
+inline bool lru_stop_early = true;
+
 template <typename ObjectType, typename TickType>
 class LeastRecentlyUsedCache {
     struct Item {
@@ -56,7 +61,7 @@ public:
     template <typename Func>
     void ForEachItemBelow(TickType tick, Func&& func) {
         static constexpr bool RETURNS_BOOL =
-            std::is_same_v<std::invoke_result<Func, ObjectType>, bool>;
+            std::is_same_v<std::invoke_result_t<Func, ObjectType>, bool>;
         Item* iterator = first_item;
         while (iterator) {
             if (static_cast<s64>(tick) - static_cast<s64>(iterator->tick) < 0) {
@@ -64,7 +69,7 @@ public:
             }
             Item* next = iterator->next;
             if constexpr (RETURNS_BOOL) {
-                if (func(iterator->obj)) {
+                if (func(iterator->obj) && lru_stop_early) {
                     return;
                 }
             } else {

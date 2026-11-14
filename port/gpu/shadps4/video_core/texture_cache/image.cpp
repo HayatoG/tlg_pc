@@ -90,12 +90,16 @@ static vk::FormatFeatureFlags2 FormatFeatureFlags(const vk::ImageUsageFlags usag
 UniqueImage::~UniqueImage() {
     if (image) {
         vmaDestroyImage(allocator, image, allocation);
+        TlgStats::image_bytes[owner].fetch_sub(size_bytes, std::memory_order_relaxed);
+        TlgStats::image_count[owner].fetch_sub(1, std::memory_order_relaxed);
     }
 }
 
 void UniqueImage::Destroy() {
     if (image) {
         vmaDestroyImage(allocator, image, allocation);
+        TlgStats::image_bytes[owner].fetch_sub(size_bytes, std::memory_order_relaxed);
+        TlgStats::image_count[owner].fetch_sub(1, std::memory_order_relaxed);
         image = vk::Image{};
         allocation = {};
     }
@@ -127,6 +131,8 @@ void UniqueImage::Create(const vk::ImageCreateInfo& image_ci) {
                vk::to_string(vk::Result{result}));
     image = vk::Image{unsafe_image};
     size_bytes = alloc_info.size;
+    TlgStats::image_bytes[owner].fetch_add(size_bytes, std::memory_order_relaxed);
+    TlgStats::image_count[owner].fetch_add(1, std::memory_order_relaxed);
 }
 
 Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
@@ -215,6 +221,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     backing = &backing_images.emplace_back();
     backing->num_samples = info.num_samples;
     backing->image = UniqueImage{instance.GetDevice(), instance.GetAllocator()};
+    backing->image.owner = TlgStats::OwnerTextureCache;
     backing->image.Create(image_ci);
 
     Vulkan::SetObjectName(instance.GetDevice(), GetImage(),
